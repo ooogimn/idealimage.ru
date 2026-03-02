@@ -1,0 +1,21 @@
+[Unit]
+Description=IdealImage Celery Worker
+After=network.target redis.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/idealimage
+EnvironmentFile=/var/www/idealimage/.env
+ExecStart=/var/www/idealimage/venv/bin/celery \
+    -A IdealImage_PDJ \
+    worker \
+    -l info \
+    -c 4 \
+    -n idealimage-worker@%h \
+    --logfile=/var/log/idealimage/celery-worker.log
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,363 @@
+/* Стили для системы лайков и реакций */
+
+.likes-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 1rem 0;
+    padding: 0.75rem;
+    background: #f8f9fa;
+    border-radius: 0.5rem;
+    border: 1px solid #e9ecef;
+}
+
+.reactions-container {
+    display: flex;
+    gap: 0.25rem;
+    align-items: center;
+}
+
+.reaction-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 2px solid #dee2e6;
+    background: white;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 1.2rem;
+    text-decoration: none;
+    position: relative;
+}
+
+.reaction-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    border-color: #007bff;
+}
+
+.reaction-btn.active {
+    background: #007bff;
+    border-color: #007bff;
+    color: white;
+    transform: scale(1.1);
+}
+
+.reaction-btn.loading {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.reaction-btn.loading::after {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    border: 2px solid #f3f3f3;
+    border-top: 2px solid #007bff;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.reaction-counter {
+    font-size: 0.8rem;
+    color: #6c757d;
+    font-weight: 500;
+    min-width: 20px;
+    text-align: center;
+}
+
+/* Рейтинг звездами */
+.rating-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 1rem 0;
+}
+
+.rating-stars {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.rating-star {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 1.5rem;
+    color: #dee2e6;
+    transition: all 0.2s ease;
+    text-decoration: none;
+}
+
+.rating-star:hover,
+.rating-star.active {
+    color: #ffc107;
+    transform: scale(1.1);
+}
+
+.rating-star:hover ~ .rating-star {
+    color: #dee2e6;
+}
+
+.rating-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.rating-average {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #495057;
+}
+
+.rating-count {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+/* Закладки */
+.bookmark-container {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 1rem 0;
+}
+
+.bookmark-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 2px solid #dee2e6;
+    background: white;
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 1.2rem;
+    text-decoration: none;
+    color: #6c757d;
+    position: relative;
+}
+
+.bookmark-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    border-color: #28a745;
+    color: #28a745;
+}
+
+.bookmark-btn.active {
+    background: #28a745;
+    border-color: #28a745;
+    color: white;
+}
+
+.bookmark-btn.loading {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.bookmark-counter {
+    font-size: 0.8rem;
+    color: #6c757d;
+    font-weight: 500;
+}
+
+/* Мобильная адаптация */
+@media (max-width: 768px) {
+    .likes-container {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        padding: 0.5rem;
+    }
+    
+    .reactions-container {
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+    
+    .reaction-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 1rem;
+    }
+    
+    .rating-star {
+        width: 28px;
+        height: 28px;
+        font-size: 1.3rem;
+    }
+    
+    .bookmark-btn {
+        width: 36px;
+        height: 36px;
+        font-size: 1rem;
+    }
+    
+    .rating-info {
+        font-size: 0.9rem;
+    }
+}
+
+/* Темная тема */
+@media (prefers-color-scheme: dark) {
+    .likes-container {
+        background: #2d3748;
+        border-color: #4a5568;
+    }
+    
+    .reaction-btn {
+        background: #2d3748;
+        border-color: #4a5568;
+        color: #e2e8f0;
+    }
+    
+    .reaction-btn:hover {
+        border-color: #63b3ed;
+    }
+    
+    .reaction-btn.active {
+        background: #3182ce;
+        border-color: #3182ce;
+    }
+    
+    .reaction-counter {
+        color: #a0aec0;
+    }
+    
+    .rating-star {
+        color: #4a5568;
+    }
+    
+    .rating-star:hover,
+    .rating-star.active {
+        color: #f6e05e;
+    }
+    
+    .rating-average {
+        color: #e2e8f0;
+    }
+    
+    .rating-count {
+        color: #a0aec0;
+    }
+    
+    .bookmark-btn {
+        background: #2d3748;
+        border-color: #4a5568;
+        color: #a0aec0;
+    }
+    
+    .bookmark-btn:hover {
+        border-color: #68d391;
+        color: #68d391;
+    }
+    
+    .bookmark-btn.active {
+        background: #38a169;
+        border-color: #38a169;
+    }
+    
+    .bookmark-counter {
+        color: #a0aec0;
+    }
+}
+
+/* Анимации */
+.reaction-btn {
+    animation: fadeIn 0.3s ease;
+}
+
+.rating-star {
+    animation: fadeIn 0.3s ease;
+}
+
+.bookmark-btn {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Улучшение доступности */
+.reaction-btn:focus,
+.rating-star:focus,
+.bookmark-btn:focus {
+    outline: 2px solid #007bff;
+    outline-offset: 2px;
+}
+
+.reaction-btn[aria-pressed="true"] {
+    background: #007bff;
+    border-color: #007bff;
+    color: white;
+}
+
+.rating-star[aria-pressed="true"] {
+    color: #ffc107;
+}
+
+.bookmark-btn[aria-pressed="true"] {
+    background: #28a745;
+    border-color: #28a745;
+    color: white;
+}
+
+/* Состояния загрузки */
+.loading-overlay {
+    position: relative;
+}
+
+.loading-overlay::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255, 255, 255, 0.8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+/* Уведомления */
+.alert {
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}

@@ -1,0 +1,24 @@
+[Unit]
+Description=IdealImage Gunicorn Service
+After=network.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/idealimage
+EnvironmentFile=/var/www/idealimage/.env
+ExecStart=/var/www/idealimage/venv/bin/gunicorn \
+    --workers 4 \
+    --worker-class gthread \
+    --threads 2 \
+    --bind unix:/run/idealimage.sock \
+    --access-logfile /var/log/idealimage/access.log \
+    --error-logfile /var/log/idealimage/error.log \
+    --capture-output \
+    --enable-stdio-inheritance \
+    IdealImage_PDJ.wsgi:application
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

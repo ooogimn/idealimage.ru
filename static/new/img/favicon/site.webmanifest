@@ -1,0 +1,25 @@
+﻿{
+  "name": "IdealImage.ru",
+  "short_name": "IdealImage",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#111827",
+  "theme_color": "#f97316",
+  "icons": [
+    {
+      "src": "/static/new/img/favicon/favicon-180x180.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/new/img/favicon/favicon-152x152.png",
+      "sizes": "152x152",
+      "type": "image/png"
+    },
+    {
+      "src": "/static/new/img/favicon/favicon-144x144.png",
+      "sizes": "144x144",
+      "type": "image/png"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+# ===== СЕКРЕТЫ (НИКОГДА не коммитить!) =====
+.env
+.envrc
+.env.local
+.env.production
+# НЕ игнорируем .env.example — он нужен в репо!
+
+# ===== PYTHON =====
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# ===== ВИРТУАЛЬНОЕ ОКРУЖЕНИЕ =====
+.venv/
+venv/
+env/
+ENV/
+
+# ===== DJANGO =====
+staticfiles/
+media/
+*.log
+db.sqlite3
+
+# ===== ЛОГИ =====
+logs/
+system_logs/
+*.log
+
+# ===== IDE =====
+.idea/
+.vscode/
+.cursor/
+.gigaide/
+*.swp
+*.swo
+*~
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===== ВРЕМЕННЫЕ ФАЙЛЫ =====
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
+
+# ===== CELERY =====
+celerybeat-schedule
+celerybeat.pid
+
+# ===== FFMPEG (большой бинарник) =====
+ffmpeg_bin/*.tar.xz
+ffmpeg_bin/ffmpeg
+ffmpeg_bin/ffprobe
+
+# ===== ПРОЧЕЕ =====
+.bashrc
+283ceba4f0c54817a342d7c177dedd19.txt
+google8993e4428b9af9fc.html
+yandex_0a6aad661f925825.html
+architect_cursor_bridge/
+ИНСТРУКЦИИ/
+docs/

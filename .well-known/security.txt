@@ -1,0 +1,5 @@
+Contact: mailto:idealimage.orel@yandex.ru
+Expires: 2026-12-31T23:59:59.000Z
+Preferred-Languages: ru, en
+Canonical: https://idealimage.ru/.well-known/security.txt
+

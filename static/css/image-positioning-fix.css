@@ -1,0 +1,34 @@
+/**
+ * Исправление позиционирования изображений в превью
+ * Проблема: object-position: center обрезает головы людей
+ * Решение: object-position: top center — показываем верхнюю часть (головы)
+ */
+
+/* Все изображения с object-cover в превью/списках */
+img.object-cover,
+video.object-cover {
+    object-position: top center !important;
+}
+
+/* Специфичные классы для карточек постов */
+.card-img-top,
+.post-thumbnail img,
+.post-card img,
+.article-preview img {
+    object-position: top center !important;
+}
+
+/* Исключения: модальные окна и детальный просмотр (показываем полностью) */
+.image-lightbox img,
+.image-lightbox-content img,
+.modal img,
+.post-detail-image {
+    object-fit: contain !important;
+    object-position: center !important;
+}
+
+/* Для видео тоже применяем */
+.js-video-orientation {
+    object-position: top center !important;
+}
+

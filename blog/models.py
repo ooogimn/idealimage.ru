@@ -258,6 +258,15 @@ class Post(models.Model):
         verbose_name='Статус обработки видео'
     )
     
+    # Поле для короткого (5 сек) превью видео
+    video_preview = models.FileField(
+        blank=True,
+        null=True,
+        upload_to='video_previews/',
+        verbose_name='Короткое превью (5 сек)',
+        help_text='Автоматически создается 5-секундный ролик низкого качества для автоплея'
+    )
+    
     # Поле для thumbnail изображения (для списков и главной страницы)
     thumbnail = models.ImageField(
         blank=True,
@@ -384,8 +393,25 @@ class Post(models.Model):
             # Берем первые 120 слов
             words = clean_text.split()[:120]
             self.description = ' '.join(words)
-        
+            
+        # ПРОВЕРКА ВИДЕО: если файл изменился и это видео - сбрасываем статус для переработки
+        if self.pk and self.kartinka != self.__kartinka:
+            if self.kartinka:
+                name = self.kartinka.name.lower()
+                if any(name.endswith(ext) for ext in ['.mp4', '.webm', '.mov']):
+                    # Важно: сбрасываем только если это НЕ результат самой задачи оптимизации
+                    # (задача устанавливает status='completed')
+                    if self.video_processing_status not in ['processing', 'completed']:
+                        self.video_processing_status = 'pending'
+                        self.video_optimized = False
+        elif not self.pk and self.kartinka:
+             # Для новых постов
+             name = self.kartinka.name.lower()
+             if any(name.endswith(ext) for ext in ['.mp4', '.webm', '.mov']):
+                 self.video_processing_status = 'pending'
+
         super().save(*args, **kwargs)
+        self.__kartinka = self.kartinka
         
         
 

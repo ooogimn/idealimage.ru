@@ -44,7 +44,7 @@ class Command(RunserverCommand):
         self.stdout.write(self.style.SUCCESS('  ✅ Django-Q запущен автоматически!'))
         self.stdout.write(self.style.SUCCESS('=' * 60))
         self.stdout.write('')
-        self.stdout.write(self.style.SUCCESS('📍 Мониторинг: http://127.0.0.1:8000/admin/django_q/'))
+        self.stdout.write(self.style.SUCCESS('📍 Мониторинг: http://127.0.0.1:8000/admin/django_celery_results/taskresult/'))
         self.stdout.write(self.style.SUCCESS('💡 Для запуска БЕЗ Django-Q: --no-qcluster'))
         self.stdout.write('')
         

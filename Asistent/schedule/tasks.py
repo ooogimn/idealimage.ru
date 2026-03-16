@@ -32,7 +32,7 @@ STRATEGY_MAP = {
 
 
 @shared_task(name='Asistent.schedule.tasks.run_specific_schedule', bind=True, max_retries=3)
-def run_specific_schedule(schedule_id: int) -> Dict[str, Any]:
+def run_specific_schedule(self, schedule_id: int) -> Dict[str, Any]:
     """
     Основная функция для запуска AI-расписания по ID.
     Вызывается автоматически Celery Beat по расписанию.
@@ -296,7 +296,7 @@ def run_system_task(schedule, now, task_name):
 
 
 @shared_task(name='Asistent.schedule.tasks.generate_all_horoscopes', bind=True, max_retries=2)
-def generate_all_horoscopes() -> Dict[str, Any]:
+def generate_all_horoscopes(self) -> Dict[str, Any]:
     """
     Генерирует все 12 гороскопов последовательно.
     Запускается по расписанию каждый день в 10:00.

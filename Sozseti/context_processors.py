@@ -2,6 +2,7 @@
 Context processors для Sozseti
 """
 from .models import SocialChannel, SocialPlatform
+from django.core.cache import cache
 
 
 def social_links(request):
@@ -11,6 +12,11 @@ def social_links(request):
     Returns:
         dict: {'social_links': {...}}
     """
+    cache_key = 'social_links_context_v1'
+    cached_links = cache.get(cache_key)
+    if cached_links is not None:
+        return {'social_links': cached_links}
+
     links = {
         'telegram_main': 'https://t.me/ideal_image_ru',
         'telegram_channels': [],
@@ -77,5 +83,6 @@ def social_links(request):
         # Если ошибка БД, возвращаем значения по умолчанию
         pass
     
+    cache.set(cache_key, links, 3600)
     return {'social_links': links}
 

@@ -1,18 +1,18 @@
 """
-Команда для тестирования AI-агента и Django-Q
+Команда для тестирования AI-агента и Celery
 Проверяет все компоненты системы агента
 """
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
-from django_q.tasks import async_task
-from django_q.models import Task
+from Asistent.tasks import async_task
+from django_celery_results.models import TaskResult
 import time
 
 User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = 'Тестирование AI-агента и его интеграции с Django-Q'
+    help = 'Тестирование AI-агента и его интеграции с Celery'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -33,17 +33,17 @@ class Command(BaseCommand):
         # ЭТАП 1: ПРОВЕРКА DJANGO-Q
         # ======================================================================
         self.stdout.write(self.style.HTTP_INFO('=' * 70))
-        self.stdout.write(self.style.HTTP_INFO('ЭТАП 1: Проверка Django-Q'))
+        self.stdout.write(self.style.HTTP_INFO('ЭТАП 1: Проверка Celery'))
         self.stdout.write(self.style.HTTP_INFO('=' * 70))
         self.stdout.write('')
 
         # 1.1 Проверка подключения к БД
-        self.stdout.write('[1.1] Проверка таблиц Django-Q...')
+        self.stdout.write('[1.1] Проверка таблиц Celery Results...')
         try:
-            total_tasks = Task.objects.count()
-            pending_tasks = Task.objects.filter(success__isnull=True).count()
-            success_tasks = Task.objects.filter(success=True).count()
-            failed_tasks = Task.objects.filter(success=False).count()
+            total_tasks = TaskResult.objects.count()
+            pending_tasks = TaskResult.objects.filter(status='PENDING').count()
+            success_tasks = TaskResult.objects.filter(status='SUCCESS').count()
+            failed_tasks = TaskResult.objects.filter(status='FAILURE').count()
 
             self.stdout.write(self.style.SUCCESS(f'   ✓ БД доступна'))
             self.stdout.write(f'   • Всего задач: {total_tasks}')
@@ -53,7 +53,7 @@ class Command(BaseCommand):
 
             if pending_tasks > 0:
                 self.stdout.write(self.style.WARNING(f'\n   ⚠️ ВНИМАНИЕ: {pending_tasks} задач ожидают выполнения!'))
-                self.stdout.write(self.style.WARNING('   Убедитесь что qcluster запущен: python manage.py qcluster'))
+                self.stdout.write(self.style.WARNING('   Убедитесь что celery worker запущен'))
 
         except Exception as e:
             self.stdout.write(self.style.ERROR(f'   ✗ Ошибка: {e}'))
@@ -61,8 +61,8 @@ class Command(BaseCommand):
 
         self.stdout.write('')
 
-        # 1.2 Проверка qcluster
-        self.stdout.write('[1.2] Проверка работы qcluster...')
+        # 1.2 Проверка celery worker
+        self.stdout.write('[1.2] Проверка работы celery worker...')
         try:
             # Создаем простую тестовую задачу
             task_id = async_task(
@@ -78,26 +78,26 @@ class Command(BaseCommand):
             for i in range(5):
                 time.sleep(1)
                 try:
-                    task = Task.objects.get(id=task_id)
-                    if task.success:
-                        self.stdout.write(self.style.SUCCESS(f'   ✓ qcluster РАБОТАЕТ! Задача выполнена за {i+1} сек'))
+                    task = TaskResult.objects.get(task_id=task_id)
+                    if task.status == 'SUCCESS':
+                        self.stdout.write(self.style.SUCCESS(f'   ✓ Celery worker РАБОТАЕТ! Задача выполнена за {i+1} сек'))
                         qcluster_working = True
                         break
-                    elif task.success is False:
+                    elif task.status == 'FAILURE':
                         self.stdout.write(self.style.ERROR('   ✗ Задача завершилась с ошибкой'))
                         self.stdout.write(f'   Ошибка: {task.result}')
                         break
-                except Task.DoesNotExist:
+                except TaskResult.DoesNotExist:
                     pass
 
             if not qcluster_working:
-                self.stdout.write(self.style.ERROR('   ✗ qcluster НЕ РАБОТАЕТ или медленно!'))
+                self.stdout.write(self.style.ERROR('   ✗ Celery worker НЕ РАБОТАЕТ или медленно!'))
                 self.stdout.write('')
                 self.stdout.write(self.style.WARNING('   РЕШЕНИЕ:'))
-                self.stdout.write('   1. Запустите в отдельном окне: python manage.py qcluster')
+                self.stdout.write('   1. Запустите в отдельном окне: celery -A IdealImage_PDJ worker -l info')
                 self.stdout.write('   2. Или используйте: START_ALL_NEW.bat -> выбор [2]')
                 self.stdout.write('')
-                self.stdout.write(self.style.ERROR('   ДАЛЬНЕЙШЕЕ ТЕСТИРОВАНИЕ НЕВОЗМОЖНО БЕЗ QCLUSTER'))
+                self.stdout.write(self.style.ERROR('   ДАЛЬНЕЙШЕЕ ТЕСТИРОВАНИЕ НЕВОЗМОЖНО БЕЗ CELERY WORKER'))
                 return
 
         except Exception as e:
@@ -289,16 +289,16 @@ class Command(BaseCommand):
         self.stdout.write('')
 
         if qcluster_working:
-            self.stdout.write(self.style.SUCCESS('✓ Django-Q работает корректно'))
+            self.stdout.write(self.style.SUCCESS('✓ Celery worker работает корректно'))
             self.stdout.write(self.style.SUCCESS('✓ AI-агент готов к работе'))
             self.stdout.write('')
             self.stdout.write('📍 Интерфейс AI-чата: http://127.0.0.1:8000/asistent/chat/')
-            self.stdout.write('📍 Админка задач: http://127.0.0.1:8000/admin/django_q/task/')
+            self.stdout.write('📍 Админка задач: http://127.0.0.1:8000/admin/django_celery_results/taskresult/')
         else:
-            self.stdout.write(self.style.ERROR('✗ Есть проблемы с Django-Q'))
+            self.stdout.write(self.style.ERROR('✗ Есть проблемы с Celery worker'))
             self.stdout.write('')
             self.stdout.write('РЕШЕНИЕ:')
-            self.stdout.write('1. Запустите qcluster: python manage.py qcluster')
+            self.stdout.write('1. Запустите celery worker: celery -A IdealImage_PDJ worker -l info')
             self.stdout.write('2. Или используйте START_ALL_NEW.bat')
 
         self.stdout.write('')

@@ -41,17 +41,32 @@ logger = logging.getLogger(__name__)
 
 
 # Вспомогательная функция: эмулирует старый API async_task для обратной совместимости
-def async_task(func_path: str, *args, task_name: str = '', hook=None, **kwargs):
+def async_task(func_path, *args, task_name: str = '', hook=None, **kwargs):
     """
     Обёртка-совместимость для перехода c Django-Q API на Celery.
     Используется в местах, где ещё не переписан прямой вызов .delay().
     """
     import importlib
-    # Разбиваем путь: 'Asistent.tasks.improve_author_draft_task' -> (модуль, функция)
-    module_path, func_name = func_path.rsplit('.', 1)
-    module = importlib.import_module(module_path)
-    func = getattr(module, func_name)
-    result = func.apply_async(args=args, kwargs=kwargs)
+
+    task_kwargs = dict(kwargs)
+    # Параметры Django-Q, которые не являются аргументами Celery задачи
+    for legacy_key in ('group', 'hook', 'task_name'):
+        task_kwargs.pop(legacy_key, None)
+
+    celery_options = {}
+    for option_key in ('countdown', 'eta', 'expires', 'queue', 'priority', 'routing_key'):
+        if option_key in task_kwargs:
+            celery_options[option_key] = task_kwargs.pop(option_key)
+
+    if callable(func_path):
+        func = func_path
+    else:
+        # Разбиваем путь: 'Asistent.tasks.improve_author_draft_task' -> (модуль, функция)
+        module_path, func_name = func_path.rsplit('.', 1)
+        module = importlib.import_module(module_path)
+        func = getattr(module, func_name)
+
+    result = func.apply_async(args=args, kwargs=task_kwargs, **celery_options)
     return str(result.id)
 
 
@@ -102,8 +117,6 @@ def improve_author_draft_task(
 ) -> Dict[str, Any]:
     """
     Улучшает HTML-черновик автора и сохраняет результат для ручной проверки.
-
-    Совместимая обёртка для старых вызовов Django-Q:
     - обновляет поля ai_draft_original/ai_draft_improved/ai_improvement_status;
     - уведомляет автора по завершении;
     - устойчиво к ошибкам GigaChat.
@@ -343,15 +356,13 @@ def generate_post_image_task(post_id: int, image_prompt: str = '', requested_by_
         'old_image': old_image,
         'message': message,
     }
-# ========================================================================
+# ============================================================================
 # ЕЖЕДНЕВНЫЕ ОТЧЁТЫ В TELEGRAM
-# ========================================================================
+# ============================================================================
 @shared_task(name='Asistent.tasks.daily_telegram_seo_report')
 def daily_telegram_seo_report():
     """
     Отправляет краткий отчёт в Telegram (утро/вечер) о проделанной SEO-работе.
-    
-    Примечание: переписано для Celery. Использует django_celery_results вместо django_q.
     """
     from django_celery_results.models import TaskResult
     from django.utils import timezone
@@ -390,9 +401,9 @@ def daily_telegram_seo_report():
     except Exception as e:
         logger.error(f"❌ daily_telegram_seo_report: {e}")
         return {'success': False, 'error': str(e)}
-# ========================================================================
+# ============================================================================
 # ОБРАБОТЧИКИ КОМАНД AI-АГЕНТА
-# ========================================================================
+# ============================================================================
 @shared_task(name='Asistent.tasks.execute_show_knowledge', bind=True, max_retries=2)
 def execute_show_knowledge(task_id: int):
     """
@@ -468,9 +479,9 @@ def execute_show_knowledge(task_id: int):
         if context:
             context.fail(str(e))
         return {'success': False, 'error': str(e)}
-# ========================================================================
+# ============================================================================
 # Обработчик команды: добавить запись в базу знаний
-# ========================================================================
+# ============================================================================
 @shared_task(name='Asistent.tasks.execute_add_knowledge', bind=True, max_retries=2)
 def execute_add_knowledge(task_id: int):
     """
@@ -523,9 +534,9 @@ def execute_add_knowledge(task_id: int):
         if context:
             context.fail(str(e))
         return {'success': False, 'error': str(e)}
-# ========================================================================
+# ============================================================================
 # Обработчик команды: показать все расписания AI
-# ========================================================================
+# ============================================================================
 @shared_task(name='Asistent.tasks.execute_manage_schedules', bind=True, max_retries=2)
 def execute_manage_schedules(task_id: int):
     """Показать все расписания AI"""
@@ -782,20 +793,22 @@ def execute_distribute_bonuses(task_id: int):
          
 '''         AI-РАСПИСАНИЯ: Автоматическая генерация статей                   '''
 
-@shared_task(name='Asistent.tasks.run_specific_schedule', bind=True, max_retries=3)
+@shared_task(name='Asistent.tasks.run_specific_schedule', max_retries=3)
 def run_specific_schedule(schedule_id: int):
     """
     Прокси-функция для обратной совместимости.
     Перенаправляет вызов в новую реализацию в schedule/tasks.py
-    
+
     Args:
         schedule_id: ID объекта AISchedule для выполнения
-    
+
     Returns:
         dict: Результат выполнения с ключами success, created_posts, errors
     """
     from Asistent.schedule.tasks import run_specific_schedule as new_run_specific_schedule
     return new_run_specific_schedule(schedule_id)
+
+
 # ========================================================================
 # Вычисляет интервал до следующего запуска на основе частоты.
 # ========================================================================

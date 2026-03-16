@@ -8,12 +8,15 @@ from django.urls import reverse
 from django.conf import settings
 from django.utils import timezone
 from django.db import models
+from django.db import IntegrityError
 from decimal import Decimal
 import json
 import logging
+import hashlib
+import hmac
 
 from .models import (
-    Donation, DonationSettings, PaymentWebhookLog, DonationNotification,
+    Donation, DonationSettings, PaymentWebhookLog, DonationNotification, WebhookEvent,
     AuthorRole, BonusFormula, AuthorStats, AuthorBonus,
     AuthorPenaltyReward, WeeklyReport, BonusPaymentRegistry
 )
@@ -25,6 +28,44 @@ from .bonus_calculator import get_author_stats_summary
 from .weekly_processor import get_current_week_summary, get_week_boundaries
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_signature(signature: str) -> str:
+    if not signature:
+        return ''
+    value = signature.strip()
+    if value.startswith('sha256='):
+        return value.split('=', 1)[1].strip()
+    return value
+
+
+def _verify_hmac_signature(raw_body: bytes, received_signature: str, secret: str) -> bool:
+    if not secret or not received_signature:
+        return False
+    expected = hmac.new(secret.encode('utf-8'), raw_body, hashlib.sha256).hexdigest()
+    provided = _normalize_signature(received_signature)
+    return hmac.compare_digest(expected, provided)
+
+
+def _register_webhook_event(provider: str, event_id: str, raw_body: bytes, donation=None):
+    payload_hash = hashlib.sha256(raw_body).hexdigest()
+    try:
+        event, created = WebhookEvent.objects.get_or_create(
+            provider=provider,
+            event_id=event_id,
+            defaults={
+                'payload_hash': payload_hash,
+                'donation': donation,
+                'processed': False,
+            }
+        )
+        if not created and donation and not event.donation_id:
+            event.donation = donation
+            event.save(update_fields=['donation'])
+        return event, created
+    except IntegrityError:
+        event = WebhookEvent.objects.filter(provider=provider, event_id=event_id).first()
+        return event, False
 
 
 def donation_page(request):
@@ -403,27 +444,53 @@ def donation_status(request, donation_id):
 def yandex_webhook(request):
     """Webhook для получения уведомлений от Яндекс.Кассы"""
     try:
-        payload = json.loads(request.body)
-        
-        # Логируем webhook
+        raw_body = request.body
+        signature = request.headers.get('X-Yoo-Signature', '')
+        secret = getattr(settings, 'YOOKASSA_WEBHOOK_SECRET', '')
+
         webhook_log = PaymentWebhookLog.objects.create(
             payment_system='yandex',
-            webhook_data=payload,
+            webhook_data={'raw': raw_body.decode('utf-8', errors='replace')},
         )
-        
+
+        if not _verify_hmac_signature(raw_body, signature, secret):
+            webhook_log.error = 'invalid_signature'
+            webhook_log.save(update_fields=['error'])
+            logger.warning("Webhook ЮKassa отклонён: неверная подпись")
+            return HttpResponse(status=403)
+
+        payload = json.loads(raw_body.decode('utf-8'))
+        webhook_log.webhook_data = payload
+        webhook_log.save(update_fields=['webhook_data'])
+
         event = payload.get('event')
         payment_object = payload.get('object', {})
         payment_id = payment_object.get('id')
+        event_id = payload.get('event_id') or f"{event}:{payment_id}"
         
         # Находим донат по payment_id
+        donation = None
         try:
             donation = Donation.objects.get(payment_id=payment_id)
             webhook_log.donation = donation
-            webhook_log.save()
+            webhook_log.save(update_fields=['donation'])
         except Donation.DoesNotExist:
             logger.error(f"Донат с payment_id {payment_id} не найден")
             webhook_log.error = f"Донат не найден: {payment_id}"
             webhook_log.save()
+            return HttpResponse(status=200)
+
+        webhook_event, created = _register_webhook_event(
+            provider='yookassa',
+            event_id=event_id,
+            raw_body=raw_body,
+            donation=donation,
+        )
+        if not created:
+            webhook_log.processed = True
+            webhook_log.error = f'duplicate_event:{event_id}'
+            webhook_log.save(update_fields=['processed', 'error'])
+            logger.info("Дубликат webhook ЮKassa %s проигнорирован", event_id)
             return HttpResponse(status=200)
         
         # Обрабатываем события
@@ -469,6 +536,14 @@ def yandex_webhook(request):
             
             webhook_log.processed = True
             webhook_log.save()
+        else:
+            webhook_log.processed = True
+            webhook_log.save(update_fields=['processed'])
+
+        if webhook_event:
+            webhook_event.processed = True
+            webhook_event.processed_at = timezone.now()
+            webhook_event.save(update_fields=['processed', 'processed_at'])
         
         return HttpResponse(status=200)
     
@@ -482,6 +557,20 @@ def yandex_webhook(request):
 def sber_webhook(request):
     """Webhook для получения уведомлений от Сбербанка"""
     try:
+        raw_body = request.body
+        signature = request.headers.get('X-Sber-Signature', '') or request.headers.get('X-Sberbank-Signature', '')
+        secret = getattr(settings, 'SBER_WEBHOOK_SECRET', '')
+
+        if not _verify_hmac_signature(raw_body, signature, secret):
+            PaymentWebhookLog.objects.create(
+                payment_system='sberbank',
+                webhook_data={'raw': raw_body.decode('utf-8', errors='replace')},
+                processed=False,
+                error='invalid_signature'
+            )
+            logger.warning("Webhook Сбер отклонён: неверная подпись")
+            return HttpResponse(status=403)
+
         # Сбербанк отправляет данные в формате form-data
         data = request.POST.dict()
         
@@ -492,8 +581,11 @@ def sber_webhook(request):
         )
         
         order_id = data.get('orderId') or data.get('mdOrder')
+        status_code = str(data.get('status', ''))
+        event_id = data.get('event_id') or f'{order_id}:{status_code}'
         
         # Находим донат
+        donation = None
         try:
             donation = Donation.objects.get(payment_id=order_id)
             webhook_log.donation = donation
@@ -502,6 +594,19 @@ def sber_webhook(request):
             logger.error(f"Донат с payment_id {order_id} не найден")
             webhook_log.error = f"Донат не найден: {order_id}"
             webhook_log.save()
+            return HttpResponse(status=200)
+
+        webhook_event, created = _register_webhook_event(
+            provider='sber',
+            event_id=event_id,
+            raw_body=raw_body,
+            donation=donation,
+        )
+        if not created:
+            webhook_log.processed = True
+            webhook_log.error = f'duplicate_event:{event_id}'
+            webhook_log.save(update_fields=['processed', 'error'])
+            logger.info("Дубликат webhook Сбер %s проигнорирован", event_id)
             return HttpResponse(status=200)
         
         # Проверяем статус
@@ -530,6 +635,11 @@ def sber_webhook(request):
             
             webhook_log.processed = True
             webhook_log.save()
+
+        if webhook_event:
+            webhook_event.processed = True
+            webhook_event.processed_at = timezone.now()
+            webhook_event.save(update_fields=['processed', 'processed_at'])
         
         return HttpResponse(status=200)
     

@@ -10,86 +10,18 @@
     {% endif %}
     {% endcomment %}
     
-    <!-- Yandex.Metrika counter (оптимизированная асинхронная загрузка) -->
-    <script type="text/javascript">
-        (function(m,e,t,r,i,k,a){
-            m[i]=m[i]||function(){(m[i].a=m[i].a||[]).push(arguments)};
-            m[i].l=1*new Date();
-            for (var j = 0; j < document.scripts.length; j++) {if (document.scripts[j].src === r) { return; }}
-            k=e.createElement(t),a=e.getElementsByTagName(t)[0],k.async=1,k.src=r,a.parentNode.insertBefore(k,a)
-        })(window, document,'script','https://mc.yandex.ru/metrika/tag.js', 'ym');
-        // Инициализация после загрузки скрипта (не блокирует рендеринг)
-        (function() {
-            var initMetrika = function() {
-                if (typeof ym !== 'undefined') {
-                    ym(102300972, 'init', {
-                        clickmap:true, 
-                        accurateTrackBounce:true, 
-                        trackLinks:true,
-                        webvisor:true,
-                        ecommerce:'dataLayer'
-                    });
-                } else {
-                    setTimeout(initMetrika, 50);
-                }
-            };
-            // Запускаем инициализацию после небольшой задержки для неблокирующей загрузки
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', function() {
-                    setTimeout(initMetrika, 100);
-                });
-            } else {
-                setTimeout(initMetrika, 100);
-            }
-        })();
+    <!-- Consent mode config: аналитика/реклама грузятся только после согласия -->
+    <script id="consent-config" type="application/json" data-consent="analytics">
+        {
+            "gaMeasurementId": "G-GMMDRYXBDD",
+            "yandexMetrikaId": 102300972
+        }
     </script>
-    <noscript><div><img src="https://mc.yandex.ru/watch/102300972" style="position:absolute; left:-9999px;" alt="" /></div></noscript>
-    <!-- /Yandex.Metrika counter -->
-    
-    <!-- Google Analytics (оптимизированная асинхронная загрузка) -->
-    <script>
-        (function () {
-            const CONSENT_COOKIE = 'idealimage_cookie_consent';
-
-            function getConsentFromCookie() {
-                const match = document.cookie.match(new RegExp(`${CONSENT_COOKIE}=([^;]+)`));
-                if (!match) return null;
-                try {
-                    return JSON.parse(decodeURIComponent(match[1]));
-                } catch (err) {
-                    console.warn('Consent cookie parse error', err);
-                    return null;
-                }
-            }
-
-            function analyticsAllowed() {
-                const consent = getConsentFromCookie();
-                return consent ? Boolean(consent.analytics) : false;
-            }
-
-            window.idealimageAnalyticsAllowed = analyticsAllowed;
-
-            // Google Analytics - асинхронная загрузка (не блокирует рендеринг)
-            (function() {
-                if (window.__idealimageAnalyticsLoaded) return;
-                window.__idealimageAnalyticsLoaded = true;
-                
-                // Инициализируем dataLayer сразу
-                window.dataLayer = window.dataLayer || [];
-                function gtag(){ window.dataLayer.push(arguments); }
-                window.gtag = gtag;
-                gtag('js', new Date());
-                gtag('config', 'G-GMMDRYXBDD');
-                
-                // Загружаем скрипт асинхронно
-                var script = document.createElement('script');
-                script.async = true;
-                script.src = 'https://www.googletagmanager.com/gtag/js?id=G-GMMDRYXBDD';
-                script.setAttribute('data-idealimage', 'analytics');
-                document.head.appendChild(script);
-            })();
-        })();
-    </script>
+    <noscript>
+        <div data-consent="analytics">
+            <img src="https://mc.yandex.ru/watch/102300972" style="position:absolute; left:-9999px;" alt="">
+        </div>
+    </noscript>
     
     <meta charset="UTF-8">
     <meta name="yandex-verification" content="0a6aad661f925825">
@@ -441,6 +373,7 @@
     </style>
     
     {% block extra_head %}{% endblock %}
+    <script src="{% static 'js/consent-manager.js' %}" defer data-consent="necessary"></script>
     
     <!-- Schema.org Structured Data (JSON-LD) -->
     {% block schema_org %}{% endblock %}
@@ -823,45 +756,51 @@
     <!-- КОНТЕНТ ОСНОВНЫЙ конец -->
 
     <!-- Футер ПОДВАЛ -->
-    <footer class="bg-gray-900 dark:bg-black text-gray-300 dark:text-gray-400 mt-16 transition-colors duration-300">
+    <footer class="bg-gray-900 dark:bg-black text-gray-300 dark:text-gray-400 mt-10 transition-colors duration-300 relative z-40">
         <!-- Баннер в футере -->
-        <div class="w-full bg-gray-800 dark:bg-gray-950 py-4 border-b border-gray-700">
+        <div class="w-full bg-gray-800 dark:bg-gray-950 py-4 border-b border-gray-700 relative z-50">
             <div class="container mx-auto px-4 text-center">
                 {% show_ad 'footer_banner' %}
             </div>
         </div>
         
-        <div class="w-full px-4 md:px-8 lg:px-12 xl:px-16 py-12">
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div class="w-full px-4 md:px-8 lg:px-12 xl:px-16 py-8 relative z-50">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6 lg:gap-8">
                 <!-- About -->
-                <div>
-                    <h3 class="text-white font-heading font-bold text-lg mb-4">IdealImage.ru</h3>
+                <div class="lg:col-span-1">
+                    <h3 class="text-white font-heading font-bold text-lg mb-2">IdealImage.ru</h3>
                     <p class="text-sm">Ваш идеальный образ начинается здесь. Мода, красота, стиль жизни.</p>
                 </div>
                 
                 <!-- Links -->
-                <div>
-                    <h4 class="text-white font-heading font-semibold mb-4">Навигация</h4>
-                    <ul class="space-y-2 text-sm">
+                <div class="lg:col-span-1">
+                    <h4 class="text-white font-heading font-semibold mb-2">Навигация</h4>
+                    <ul class="space-y-1 text-sm">
                         <li><a href="{% url 'donations:services_page' %}" class="hover:text-primary">💎 Услуги</a></li>
                         <li><a href="{% url 'blog:post_list' %}" class="hover:text-primary">Блог</a></li>
                         <li><a href="#" class="hover:text-primary">Категории</a></li>
                     </ul>
                 </div>
                 
-                <!-- Info -->
-                <div>
-                    <h4 class="text-white font-heading font-semibold mb-4">Информация</h4>
-                    <ul class="space-y-2 text-sm">
-                        <li><a href="{% url 'Home:documents' %}" class="hover:text-primary">Документы</a></li>
-                        <li><a href="{% url 'Home:help' %}" class="hover:text-primary">Помощь</a></li>
-                        <li><a href="{% url 'Home:advertising' %}" class="hover:text-primary">Реклама</a></li>
+                <!-- Info w/ 3 Columns -->
+                <div class="lg:col-span-2 sm:col-span-2">
+                    <h4 class="text-white font-heading font-semibold mb-2">Информация</h4>
+                    <ul class="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-1 text-sm">
+                        <li><a href="{% url 'Home:agreement' %}" class="hover:text-primary transition-colors">Соглашение</a></li>
+                        <li><a href="{% url 'Home:privacy' %}" class="hover:text-primary transition-colors">Политика ПДн</a></li>
+                        <li><a href="{% url 'Home:cookie_policy' %}" class="hover:text-primary transition-colors">Cookie</a></li>
+                        <li><a href="{% url 'Home:offer' %}" class="hover:text-primary transition-colors">Оферта</a></li>
+                        <li><a href="{% url 'Home:requisites' %}" class="hover:text-primary transition-colors">Реквизиты</a></li>
+                        <li><a href="#" class="open-cookie-settings hover:text-primary transition-colors">Настройки cookie</a></li>
+                        <li><a href="{% url 'Home:documents' %}" class="hover:text-primary transition-colors">Документы</a></li>
+                        <li><a href="{% url 'Home:help' %}" class="hover:text-primary transition-colors">Помощь</a></li>
+                        <li><a href="{% url 'Home:advertising' %}" class="hover:text-primary transition-colors">Реклама</a></li>
                     </ul>
                 </div>
                 
                 <!-- Social Networks -->
                 <div>
-                    <h4 class="text-white font-heading font-semibold mb-4">Мы в соцсетях</h4>
+                    <h4 class="text-white font-heading font-semibold mb-2">Мы в соцсетях</h4>
                     {% load social_tags %}
                     {% get_main_social_links as social_links %}
                     <div class="flex gap-3 flex-wrap">
@@ -914,13 +853,13 @@
                 </div>
             </div>
             
-            <div class="border-t border-gray-800 mt-8 pt-8">
-                <div class="text-center text-sm space-y-2">
+            <div class="border-t border-gray-800 mt-6 pt-6">
+                <div class="text-center text-sm space-y-1">
                     <p>&copy; 2025 IdealImage.ru. Все права защищены.</p>
                     <p class="text-xs text-gray-500">
-                        <a href="{% url 'Home:documents' %}" class="hover:text-primary">Политика конфиденциальности</a> | 
-                        <a href="{% url 'Home:documents' %}" class="hover:text-primary">Пользовательское соглашение</a> | 
-                        <a href="{% url 'Home:documents' %}" class="hover:text-primary">Контакты</a>
+                        <a href="{% url 'Home:privacy' %}" class="hover:text-primary transition-colors">Политика конфиденциальности</a> <span class="mx-2 text-gray-700">|</span> 
+                        <a href="{% url 'Home:agreement' %}" class="hover:text-primary transition-colors">Пользовательское соглашение</a> <span class="mx-2 text-gray-700">|</span> 
+                        <a href="{% url 'Home:requisites' %}" class="hover:text-primary transition-colors">Контакты</a>
                     </p>
                 </div>
             </div>

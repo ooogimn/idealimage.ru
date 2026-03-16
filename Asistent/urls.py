@@ -4,6 +4,7 @@ URL маршруты для AI-Ассистента
 from django.urls import path, include
 from django.views.generic import RedirectView
 from . import views
+from Asistent.Test_Promot import prompt_template_test
 # Модерация теперь работает только через Django Admin (/admin/)
 
 app_name = 'asistent'
@@ -45,7 +46,7 @@ urlpatterns = [
     path('admin-panel/prompts/create/', views.prompt_template_create, name='prompt_template_create'),
     path('admin-panel/prompts/<int:template_id>/edit/', views.prompt_template_edit, name='prompt_template_edit'),
     path('admin-panel/prompts/<int:template_id>/delete/', views.prompt_template_delete, name='prompt_template_delete'),
-    path('admin-panel/prompts/<int:template_id>/test/', views.prompt_template_test, name='prompt_template_test'),
+    path('admin-panel/prompts/<int:template_id>/test/', prompt_template_test, name='prompt_template_test'),
     path('api/prompt/<int:prompt_id>/variables/', views.get_prompt_variables, name='get_prompt_variables'),
     
     # Журнал AI-агента

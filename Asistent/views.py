@@ -15,6 +15,11 @@ from django.urls import reverse
 import logging
 from urllib.parse import urlencode
 import json
+import ast
+from types import SimpleNamespace
+from celery.result import AsyncResult
+from django_celery_beat.models import PeriodicTask, IntervalSchedule, CrontabSchedule
+from django_celery_results.models import TaskResult
 
 logger = logging.getLogger(__name__)
 
@@ -126,6 +131,100 @@ def _safe_int(value):
         return int(value)
     except (TypeError, ValueError):
         return None
+
+
+def _warn_legacy_queue(location):
+    logger.warning("LEGACY queue 2026 migration fallback at %s", location)
+
+
+def _lookup_legacy_djangoq_model(model_name, location):
+    # LEGACY django_q 2026 migration
+    _warn_legacy_queue(f"{location}:{model_name}")
+    return None
+
+
+def _safe_parse_payload(raw_value, default):
+    if raw_value in (None, '', 'null'):
+        return default
+    if isinstance(raw_value, (dict, list, tuple)):
+        return raw_value
+
+    try:
+        return json.loads(raw_value)
+    except Exception:
+        try:
+            return ast.literal_eval(raw_value)
+        except Exception:
+            return default
+
+
+def _to_legacy_task_view(task_result):
+    kwargs_payload = _safe_parse_payload(task_result.task_kwargs, {})
+    if not isinstance(kwargs_payload, dict):
+        kwargs_payload = {}
+
+    args_payload = _safe_parse_payload(task_result.task_args, [])
+    if isinstance(args_payload, tuple):
+        args_payload = list(args_payload)
+    if not isinstance(args_payload, list):
+        args_payload = [args_payload]
+
+    started_at = task_result.date_started or task_result.date_created
+    stopped_at = task_result.date_done or task_result.date_created
+    time_taken = None
+    if task_result.date_started and task_result.date_done:
+        time_taken = (task_result.date_done - task_result.date_started).total_seconds()
+
+    return SimpleNamespace(
+        id=task_result.task_id,
+        name=task_result.task_name or task_result.task_id,
+        func=task_result.task_name or '',
+        group=task_result.worker or '',
+        kwargs=kwargs_payload,
+        args=args_payload,
+        lock=task_result.date_started if task_result.status == 'STARTED' else None,
+        started=started_at,
+        stopped=stopped_at,
+        time_taken=time_taken,
+        result=task_result.result,
+        status=task_result.status,
+        traceback=task_result.traceback,
+    )
+
+
+def _to_legacy_schedule_view(periodic_task):
+    schedule_type = 'O'
+    minutes = None
+    cron = None
+
+    if periodic_task.crontab_id:
+        schedule_type = 'C'
+        cron = str(periodic_task.crontab)
+    elif periodic_task.interval_id:
+        schedule_type = 'I'
+        interval = periodic_task.interval
+        if interval:
+            multiplier = {
+                IntervalSchedule.DAYS: 24 * 60,
+                IntervalSchedule.HOURS: 60,
+                IntervalSchedule.MINUTES: 1,
+                IntervalSchedule.SECONDS: 1 / 60,
+                IntervalSchedule.MICROSECONDS: 1 / 60000000,
+            }
+            minutes = int(interval.every * multiplier.get(interval.period, 1))
+
+    return SimpleNamespace(
+        id=periodic_task.id,
+        name=periodic_task.name,
+        func=periodic_task.task,
+        schedule_type=schedule_type,
+        minutes=minutes,
+        cron=cron,
+        args=periodic_task.args,
+        kwargs=periodic_task.kwargs,
+        next_run=periodic_task.start_time,
+        repeats=-1,
+    )
 
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
@@ -483,7 +582,6 @@ def reject_task(request, task_id):
 @staff_member_required
 def ai_schedules(request):
     """Управление расписаниями AI и системными задачами Django-Q"""
-    from django_q.models import Schedule as DjangoQSchedule
 
     current_tab = request.GET.get('tab', 'ai')
 
@@ -553,9 +651,10 @@ def ai_schedules(request):
     sort_prefix = '-' if sort_direction == 'desc' else ''
     ai_queryset = ai_queryset.order_by(f'{sort_prefix}{sort_field}', 'id').select_related('category')
 
-    # Системные задачи Django-Q
-    system_queryset = DjangoQSchedule.objects.all().order_by('name')
-    system_total_count = system_queryset.count()
+    # LEGACY django_q 2026 migration: системные задачи берем из Celery Beat
+    system_tasks = PeriodicTask.objects.select_related('interval', 'crontab').order_by('name')
+    system_queryset = [_to_legacy_schedule_view(item) for item in system_tasks]
+    system_total_count = len(system_queryset)
 
     base_params = {
         'tab': current_tab,
@@ -602,7 +701,7 @@ def ai_schedules(request):
         'ai_count': ai_total_count,
         'system_count': system_total_count,
         'page_title': 'Управление расписаниями - IdealImage.ru',
-        'page_description': 'AI-генерация и системные задачи Django-Q',
+        'page_description': 'AI-генерация и системные задачи Celery Beat',
         'view_mode': requested_view,
         'status_filter': status_filter,
         'run_state_filter': run_state_filter,
@@ -737,7 +836,7 @@ def bulk_ai_schedules_action(request):
         success_count = 0
         errors = []
         
-        from django_q.tasks import async_task
+        from Asistent.tasks import async_task
         from Asistent.schedule.tasks import run_specific_schedule
         
         for schedule in schedules:
@@ -1047,7 +1146,7 @@ def api_token_analysis(request):
 def run_ai_schedule(request, schedule_id):
     """Запустить расписание AI вручную"""
     from django.http import JsonResponse
-    from django_q.tasks import async_task
+    from Asistent.tasks import async_task
     
     schedule = get_object_or_404(AISchedule, id=schedule_id)
     
@@ -1063,15 +1162,12 @@ def run_ai_schedule(request, schedule_id):
             messages.warning(request, f'⚠️ {error_msg}')
             return redirect('asistent:ai_schedules')
         
-        # Запускаем расписание напрямую через Django-Q
+        # Запускаем расписание через Celery-совместимый async_task wrapper
         from Asistent.schedule.tasks import run_specific_schedule
-        from django_q.models import OrmQ
+        queued_count = None
+        active_count = None
         
-        # Проверяем статус Django-Q перед запуском
-        queued_count = OrmQ.objects.filter(lock__isnull=True).count()
-        active_count = OrmQ.objects.filter(lock__isnull=False).count()
-        
-        # Запускаем асинхронно через Django-Q
+        # Запускаем асинхронно через Celery wrapper
         try:
             task_id = async_task(
                 run_specific_schedule,
@@ -1080,8 +1176,8 @@ def run_ai_schedule(request, schedule_id):
             )
             
             logger.info(
-                f"✅ Расписание {schedule.name} (ID: {schedule_id}) запущено вручную через Django-Q. "
-                f"Task ID: {task_id}, В очереди: {queued_count}, Выполняется: {active_count}"
+                f"✅ Расписание {schedule.name} (ID: {schedule_id}) запущено вручную через Celery wrapper. "
+                f"Task ID: {task_id}"
             )
         except Exception as task_error:
             logger.error(f"❌ Ошибка при добавлении задачи в очередь Django-Q: {task_error}", exc_info=True)
@@ -1103,7 +1199,7 @@ def run_ai_schedule(request, schedule_id):
             status_payload = _schedule_status_payload(schedule)
             status_payload.update({
                 'success': True,
-                'message': f'🚀 Запущена генерация статей для "{schedule.name}". Задача добавлена в очередь Django-Q.',
+                'message': f'🚀 Запущена генерация статей для "{schedule.name}". Задача добавлена в очередь Celery.',
                 'schedule_id': schedule_id,
                 'schedule_name': schedule.name,
             })
@@ -1119,7 +1215,7 @@ def run_ai_schedule(request, schedule_id):
         else:
             redirect_url = 'asistent:ai_schedules'
         
-        messages.success(request, f'🚀 Запущена генерация статей для "{schedule.name}". Задача добавлена в очередь Django-Q.')
+        messages.success(request, f'🚀 Запущена генерация статей для "{schedule.name}". Задача добавлена в очередь Celery.')
         return redirect(redirect_url)
         
     except Exception as e:
@@ -1151,50 +1247,50 @@ def run_ai_schedule(request, schedule_id):
 @staff_member_required
 def create_system_schedule(request):
     """Создание системной задачи Django-Q"""
-    from django_q.models import Schedule as DjangoQSchedule
     from django.utils import timezone
-    import json
     
     if request.method == 'POST':
         form = DjangoQScheduleForm(request.POST)
         if form.is_valid():
             try:
-                # Подготовка данных
-                schedule_data = {
-                    'name': form.cleaned_data['name'],
-                    'func': form.cleaned_data['func'],
-                    'schedule_type': form.cleaned_data['schedule_type'],
-                    'repeats': form.cleaned_data['repeats'],
-                }
-                
-                # Добавляем minutes только если тип = Интервал
-                if form.cleaned_data['schedule_type'] == 'I':
-                    schedule_data['minutes'] = form.cleaned_data['minutes']
-                
-                # Добавляем cron только если тип = Cron
-                if form.cleaned_data['schedule_type'] == 'C':
-                    schedule_data['cron'] = form.cleaned_data['cron']
-                
-                # Аргументы
-                if form.cleaned_data.get('args'):
-                    schedule_data['args'] = form.cleaned_data['args']
-                
-                # Именованные аргументы (парсим JSON)
-                if form.cleaned_data.get('kwargs'):
-                    try:
-                        schedule_data['kwargs'] = json.loads(form.cleaned_data['kwargs'])
-                    except json.JSONDecodeError:
-                        messages.error(request, 'Неверный формат JSON в kwargs')
+                schedule_type = form.cleaned_data['schedule_type']
+                interval = None
+                crontab = None
+
+                if schedule_type == 'I':
+                    minutes = form.cleaned_data['minutes'] or 60
+                    interval, _ = IntervalSchedule.objects.get_or_create(
+                        every=max(1, minutes),
+                        period=IntervalSchedule.MINUTES,
+                    )
+                elif schedule_type == 'C':
+                    cron_value = (form.cleaned_data['cron'] or '').split()
+                    if len(cron_value) != 5:
+                        messages.error(request, 'Cron должен быть в формате: минута час день месяц день_недели')
                         return render(request, 'Asistent/create_system_schedule.html', {'form': form})
-                
-                # Следующий запуск
-                if form.cleaned_data.get('next_run'):
-                    schedule_data['next_run'] = form.cleaned_data['next_run']
+                    crontab, _ = CrontabSchedule.objects.get_or_create(
+                        minute=cron_value[0],
+                        hour=cron_value[1],
+                        day_of_month=cron_value[2],
+                        month_of_year=cron_value[3],
+                        day_of_week=cron_value[4],
+                    )
                 else:
-                    schedule_data['next_run'] = timezone.now()
-                
-                # Создаём задачу
-                schedule = DjangoQSchedule.objects.create(**schedule_data)
+                    interval, _ = IntervalSchedule.objects.get_or_create(
+                        every=1,
+                        period=IntervalSchedule.DAYS,
+                    )
+
+                schedule = PeriodicTask.objects.create(
+                    name=form.cleaned_data['name'],
+                    task=form.cleaned_data['func'],
+                    interval=interval,
+                    crontab=crontab,
+                    args=form.cleaned_data.get('args') or '[]',
+                    kwargs=form.cleaned_data.get('kwargs') or '{}',
+                    start_time=form.cleaned_data.get('next_run') or timezone.now(),
+                    enabled=True,
+                )
                 
                 messages.success(request, f'Системная задача "{schedule.name}" создана!')
                 return redirect('asistent:ai_schedules' + '?tab=system')
@@ -1209,7 +1305,7 @@ def create_system_schedule(request):
         'form': form,
         'is_edit': False,
         'page_title': 'Создание системной задачи - IdealImage.ru',
-        'page_description': 'Создание новой задачи Django-Q',
+        'page_description': 'Создание новой задачи Celery',
     }
     
     return render(request, 'Asistent/create_system_schedule.html', context)
@@ -1218,43 +1314,49 @@ def create_system_schedule(request):
 @staff_member_required
 def edit_system_schedule(request, schedule_id):
     """Редактирование системной задачи Django-Q"""
-    from django_q.models import Schedule as DjangoQSchedule
-    import json
-    
-    schedule = get_object_or_404(DjangoQSchedule, id=schedule_id)
+    schedule = get_object_or_404(PeriodicTask, id=schedule_id)
     
     if request.method == 'POST':
         form = DjangoQScheduleForm(request.POST)
         if form.is_valid():
             try:
-                # Обновляем данные
                 schedule.name = form.cleaned_data['name']
-                schedule.func = form.cleaned_data['func']
-                schedule.schedule_type = form.cleaned_data['schedule_type']
-                schedule.repeats = form.cleaned_data['repeats']
-                
-                if form.cleaned_data['schedule_type'] == 'I':
-                    schedule.minutes = form.cleaned_data['minutes']
+                schedule.task = form.cleaned_data['func']
+                schedule.args = form.cleaned_data.get('args') or '[]'
+                schedule.kwargs = form.cleaned_data.get('kwargs') or '{}'
+                schedule.start_time = form.cleaned_data.get('next_run') or schedule.start_time
+
+                schedule_type = form.cleaned_data['schedule_type']
+                schedule.interval = None
+                schedule.crontab = None
+
+                if schedule_type == 'I':
+                    minutes = form.cleaned_data['minutes'] or 60
+                    schedule.interval, _ = IntervalSchedule.objects.get_or_create(
+                        every=max(1, minutes),
+                        period=IntervalSchedule.MINUTES,
+                    )
+                elif schedule_type == 'C':
+                    cron_value = (form.cleaned_data['cron'] or '').split()
+                    if len(cron_value) != 5:
+                        messages.error(request, 'Cron должен быть в формате: минута час день месяц день_недели')
+                        return render(
+                            request,
+                            'Asistent/create_system_schedule.html',
+                            {'form': form, 'schedule': _to_legacy_schedule_view(schedule), 'is_edit': True},
+                        )
+                    schedule.crontab, _ = CrontabSchedule.objects.get_or_create(
+                        minute=cron_value[0],
+                        hour=cron_value[1],
+                        day_of_month=cron_value[2],
+                        month_of_year=cron_value[3],
+                        day_of_week=cron_value[4],
+                    )
                 else:
-                    schedule.minutes = None
-                
-                if form.cleaned_data['schedule_type'] == 'C':
-                    schedule.cron = form.cleaned_data['cron']
-                else:
-                    schedule.cron = None
-                
-                if form.cleaned_data.get('args'):
-                    schedule.args = form.cleaned_data['args']
-                
-                if form.cleaned_data.get('kwargs'):
-                    try:
-                        schedule.kwargs = json.loads(form.cleaned_data['kwargs'])
-                    except json.JSONDecodeError:
-                        messages.error(request, 'Неверный формат JSON в kwargs')
-                        return render(request, 'Asistent/create_system_schedule.html', {'form': form, 'schedule': schedule, 'is_edit': True})
-                
-                if form.cleaned_data.get('next_run'):
-                    schedule.next_run = form.cleaned_data['next_run']
+                    schedule.interval, _ = IntervalSchedule.objects.get_or_create(
+                        every=1,
+                        period=IntervalSchedule.DAYS,
+                    )
                 
                 schedule.save()
                 
@@ -1265,23 +1367,33 @@ def edit_system_schedule(request, schedule_id):
                 messages.error(request, f'Ошибка обновления задачи: {str(e)}')
                 logger.error(f'Error updating system schedule: {e}')
     else:
-        # Заполняем форму текущими данными
+        schedule_type = 'O'
+        minutes = None
+        cron = ''
+        if schedule.interval_id:
+            schedule_type = 'I'
+            if schedule.interval.period == IntervalSchedule.MINUTES:
+                minutes = schedule.interval.every
+        if schedule.crontab_id:
+            schedule_type = 'C'
+            cron = str(schedule.crontab)
+
         initial_data = {
             'name': schedule.name,
-            'func': schedule.func,
-            'schedule_type': schedule.schedule_type,
-            'minutes': schedule.minutes,
-            'cron': schedule.cron,
+            'func': schedule.task,
+            'schedule_type': schedule_type,
+            'minutes': minutes,
+            'cron': cron,
             'args': schedule.args,
-            'kwargs': json.dumps(schedule.kwargs) if schedule.kwargs else '',
-            'repeats': schedule.repeats,
-            'next_run': schedule.next_run,
+            'kwargs': schedule.kwargs if schedule.kwargs else '',
+            'repeats': -1,
+            'next_run': schedule.start_time,
         }
         form = DjangoQScheduleForm(initial=initial_data)
     
     context = {
         'form': form,
-        'schedule': schedule,
+        'schedule': _to_legacy_schedule_view(schedule),
         'is_edit': True,
         'page_title': f'Редактирование задачи - IdealImage.ru',
         'page_description': f'Редактирование системной задачи "{schedule.name}"',
@@ -1294,9 +1406,7 @@ def edit_system_schedule(request, schedule_id):
 @require_POST
 def delete_system_schedule(request, schedule_id):
     """Удаление системной задачи Django-Q"""
-    from django_q.models import Schedule as DjangoQSchedule
-    
-    schedule = get_object_or_404(DjangoQSchedule, id=schedule_id)
+    schedule = get_object_or_404(PeriodicTask, id=schedule_id)
     schedule_name = schedule.name
     
     schedule.delete()
@@ -1475,8 +1585,8 @@ def run_schedule_now(request, schedule_id):
         return redirect(admin_changelist_url)
     
     try:
-        # ШАГ 1: Отправка задачи в очередь Django-Q
-        from django_q.tasks import async_task
+        # ШАГ 1: Отправка задачи в очередь Celery
+        from Asistent.tasks import async_task
         task_id = async_task(
             'Asistent.tasks.run_specific_schedule',
             schedule_id,
@@ -1486,7 +1596,7 @@ def run_schedule_now(request, schedule_id):
         # Успешное создание задачи
         messages.success(
             request,
-            f'🚀 Задача отправлена в очередь Django-Q<br>'
+            f'🚀 Задача отправлена в очередь Celery<br>'
             f'📋 Расписание: "{schedule.name}"<br>'
             f'🆔 Task ID: {task_id}<br>'
             f'📊 Будет создано статей: {schedule.articles_per_run}<br>'
@@ -1496,11 +1606,11 @@ def run_schedule_now(request, schedule_id):
         if schedule.prompt_template:
             messages.info(
                 request,
-                f'🔄 ШАГ 2/4: Django-Q обрабатывает задачу...<br>'
+                f'🔄 ШАГ 2/4: Celery обрабатывает задачу...<br>'
                 f'📥 Парсинг источников ({len(schedule.get_source_urls_list())} URL)<br>'
                 f'🤖 Генерация статей через GigaChat AI<br>'
                 f'💾 Сохранение в базу данных<br>'
-                f'👉 Следите за задачами: /admin/django_q/task/'
+                f'👉 Следите за задачами: /admin/django_celery_results/taskresult/'
             )
         
         blog_posts_url = reverse('admin:blog_post_changelist') + '?author__id=23'
@@ -2398,11 +2508,9 @@ def api_knowledge_delete(request, knowledge_id):
 @staff_member_required
 def djangoq_tasks_active(request):
     """Страница активных задач Django-Q (выполняются сейчас)"""
-    from django_q.models import OrmQ
-    
-    active_tasks = OrmQ.objects.filter(
-        lock__isnull=False  # Задачи с lock = выполняются
-    ).order_by('-lock')
+    _lookup_legacy_djangoq_model('OrmQ', 'djangoq_tasks_active')
+    active_results = TaskResult.objects.filter(status='STARTED').order_by('-date_started')
+    active_tasks = [_to_legacy_task_view(item) for item in active_results]
     
     return render(request, 'Asistent/djangoq_tasks.html', {
         'tasks': active_tasks,
@@ -2410,19 +2518,17 @@ def djangoq_tasks_active(request):
         'title': '⚡ Активные задачи (Выполняются)',
         'description': 'Задачи, которые выполняются в данный момент',
         'show_actions': False,  # Активные задачи нельзя удалять/запускать
-        'page_title': 'Активные задачи Django-Q - IdealImage.ru',
-        'page_description': 'Список активных задач Django-Q, выполняющихся в данный момент',
+        'page_title': 'Активные задачи Celery - IdealImage.ru',
+        'page_description': 'Список активных задач Celery, выполняющихся в данный момент',
     })
 
 # Страница задач в очереди Django-Q
 @staff_member_required
 def djangoq_tasks_queued(request):
     """Страница задач в очереди"""
-    from django_q.models import OrmQ
-    
-    queued_tasks = OrmQ.objects.filter(
-        lock__isnull=True  # Задачи без lock = в очереди
-    ).order_by('id')
+    _lookup_legacy_djangoq_model('OrmQ', 'djangoq_tasks_queued')
+    queued_results = TaskResult.objects.filter(status='PENDING').order_by('date_created')
+    queued_tasks = [_to_legacy_task_view(item) for item in queued_results]
     
     return render(request, 'Asistent/djangoq_tasks.html', {
         'tasks': queued_tasks,
@@ -2430,21 +2536,23 @@ def djangoq_tasks_queued(request):
         'title': '📋 Задачи в очереди',
         'description': 'Задачи, ожидающие выполнения',
         'show_actions': True,  # Задачи в очереди можно запускать/удалять
-        'page_title': 'Задачи в очереди Django-Q - IdealImage.ru',
-        'page_description': 'Список задач Django-Q, ожидающих выполнения',
+        'page_title': 'Задачи в очереди Celery - IdealImage.ru',
+        'page_description': 'Список задач Celery, ожидающих выполнения',
     })
 
 # Страница задач выполненных за последний час
 @staff_member_required
 def djangoq_tasks_recent(request):
     """Страница задач выполненных за последний час"""
-    from django_q.models import Success
     from datetime import timedelta
-    
+
+    _lookup_legacy_djangoq_model('Success', 'djangoq_tasks_recent')
     hour_ago = timezone.now() - timedelta(hours=1)
-    recent_tasks = Success.objects.filter(
-        stopped__gte=hour_ago
-    ).order_by('-stopped')
+    recent_results = TaskResult.objects.filter(
+        status='SUCCESS',
+        date_done__gte=hour_ago,
+    ).order_by('-date_done')
+    recent_tasks = [_to_legacy_task_view(item) for item in recent_results]
     
     return render(request, 'Asistent/djangoq_tasks.html', {
         'tasks': recent_tasks,
@@ -2452,80 +2560,70 @@ def djangoq_tasks_recent(request):
         'title': '✅ Задачи за последний час',
         'description': 'Успешно выполненные задачи за последний час',
         'show_actions': False,  # Выполненные задачи только для просмотра
-        'page_title': 'Задачи за час Django-Q - IdealImage.ru',
-        'page_description': 'Успешно выполненные задачи Django-Q за последний час',
+        'page_title': 'Задачи за час Celery - IdealImage.ru',
+        'page_description': 'Успешно выполненные задачи Celery за последний час',
     })
 
 # Страница всех задач Django-Q с фильтрацией и сортировкой
 @staff_member_required
 def djangoq_tasks_all(request):
     """Страница всех задач Django-Q с фильтрацией и сортировкой"""
-    from django_q.models import Success, Failure
     from django.core.paginator import Paginator
     
+    _lookup_legacy_djangoq_model('Success', 'djangoq_tasks_all')
+    _lookup_legacy_djangoq_model('Failure', 'djangoq_tasks_all')
+
     # Получаем параметры фильтрации и сортировки
     filter_type = request.GET.get('type', 'success')  # success, failed
     sort_by = request.GET.get('sort', '-stopped')  # -stopped, stopped, func, -time_taken, time_taken
     view_mode = request.GET.get('view', 'grid')  # grid, table
     search_query = request.GET.get('search', '').strip()
     
-    # Определяем модель для запроса
+    # Получаем Celery результаты задач
     if filter_type == 'failed':
-        tasks = Failure.objects.all()
+        task_results = TaskResult.objects.filter(status='FAILURE')
     else:
-        tasks = Success.objects.all()
+        task_results = TaskResult.objects.filter(status='SUCCESS')
     
     # Применяем поиск
     if search_query:
-        tasks = tasks.filter(
-            Q(func__icontains=search_query) | 
-            Q(name__icontains=search_query) |
-            Q(group__icontains=search_query)
+        task_results = task_results.filter(
+            Q(task_name__icontains=search_query) |
+            Q(task_kwargs__icontains=search_query) |
+            Q(worker__icontains=search_query)
         )
     
-    # Применяем сортировку
-    # Для сортировки по времени выполнения используем вычисляемое поле через annotate
-    # time_taken = stopped - started (вычисляемое поле)
+    valid_sorts = {
+        '-stopped': '-date_done',
+        'stopped': 'date_done',
+        'func': 'task_name',
+        '-func': '-task_name',
+        'group': 'worker',
+        '-group': '-worker',
+    }
+
     if sort_by in ['-time_taken', 'time_taken']:
-        tasks = tasks.annotate(
+        task_results = task_results.annotate(
             execution_time=ExpressionWrapper(
-                F('stopped') - F('started'),
-                output_field=DurationField()
+                F('date_done') - F('date_started'),
+                output_field=DurationField(),
             )
-        )
-        if sort_by == '-time_taken':
-            tasks = tasks.order_by('-execution_time')
-        else:
-            tasks = tasks.order_by('execution_time')
+        ).order_by('-execution_time' if sort_by == '-time_taken' else 'execution_time')
     else:
-        valid_sorts = {
-            '-stopped': '-stopped',  # По времени, новые первые
-            'stopped': 'stopped',    # По времени, старые первые
-            'func': 'func',          # По названию А-Я
-            '-func': '-func',        # По названию Я-А
-            'group': 'group',        # По группе А-Я
-            '-group': '-group',      # По группе Я-А
-        }
-        
-        sort_field = valid_sorts.get(sort_by, '-stopped')
-        
-        # Для сортировки по group нужна дополнительная обработка
-        if sort_by in ['group', '-group']:
-            # Сначала сортируем по группе, потом по времени
-            tasks = tasks.order_by(sort_by, '-stopped')
-        else:
-            tasks = tasks.order_by(sort_field)
+        task_results = task_results.order_by(valid_sorts.get(sort_by, '-date_done'))
+
+    tasks_list = [_to_legacy_task_view(item) for item in task_results]
     
     # Пагинация
     per_page = 50 if view_mode == 'grid' else 100
-    paginator = Paginator(tasks, per_page)
+    paginator = Paginator(tasks_list, per_page)
     page = request.GET.get('page', 1)
     tasks_page = paginator.get_page(page)
     
     return render(request, 'Asistent/djangoq_tasks.html', {
         'tasks': tasks_page,
         'task_type': 'all',
-        'title': '📊 Все задачи Django-Q',
+        'title': '📊 Все задачи Celery',
         'description': 'История выполнения всех задач',
         'filter_type': filter_type,
         'sort_by': sort_by,
@@ -2533,8 +2631,8 @@ def djangoq_tasks_all(request):
         'search_query': search_query,
         'show_actions': False,
         'show_pagination': True,
-        'page_title': 'Все задачи Django-Q - IdealImage.ru',
-        'page_description': 'Полная история выполнения задач Django-Q с фильтрацией',
+        'page_title': 'Все задачи Celery - IdealImage.ru',
+        'page_description': 'Полная история выполнения задач Celery с фильтрацией',
     })
 
 # Мгновенный запуск задачи из очереди
@@ -2542,19 +2640,23 @@ def djangoq_tasks_all(request):
 @require_POST
 def djangoq_task_run_now(request, task_id):
     """Мгновенный запуск задачи из очереди"""
-    from django_q.models import OrmQ
-    from django_q.tasks import async_task
-    
+    from Asistent.tasks import async_task
+
     try:
-        task = OrmQ.objects.get(id=task_id)  # Используем id вместо pk для UUID
-        task_name = task.name or 'Unnamed task'
-        
-        # Запускаем задачу асинхронно
+        task_result = get_object_or_404(TaskResult, task_id=task_id)
+        task_name = task_result.task_name or 'Unnamed task'
+        task_args = _safe_parse_payload(task_result.task_args, [])
+        task_kwargs = _safe_parse_payload(task_result.task_kwargs, {})
+        if not isinstance(task_args, (list, tuple)):
+            task_args = [task_args]
+        if not isinstance(task_kwargs, dict):
+            task_kwargs = {}
+
         async_task(
-            task.func,
-            *task.args,
-            **task.kwargs,
-            task_name=task_name
+            task_name,
+            *task_args,
+            **task_kwargs,
+            task_name=f'manual:{task_name}'
         )
         
         messages.success(request, f'✅ Задача "{task_name}" запущена немедленно!')
@@ -2562,9 +2664,6 @@ def djangoq_task_run_now(request, task_id):
         
         return redirect('asistent:djangoq_tasks_queued')
         
-    except OrmQ.DoesNotExist:
-        messages.error(request, '❌ Задача не найдена')
-        return redirect('asistent:djangoq_tasks_queued')
     except Exception as e:
         messages.error(request, f'❌ Ошибка запуска задачи: {str(e)}')
         logger.error(f"Ошибка запуска задачи {task_id}: {e}")
@@ -2576,21 +2675,21 @@ def djangoq_task_run_now(request, task_id):
 @require_POST
 def djangoq_task_delete(request, task_id):
     """Удаление задачи из очереди"""
-    from django_q.models import OrmQ
-    
+
     try:
-        task = OrmQ.objects.get(id=task_id)  # Используем id вместо pk для UUID
-        task_name = task.name or 'Unnamed task'
-        task.delete()
+        task_result = TaskResult.objects.filter(task_id=task_id).first()
+        task_name = (task_result.task_name if task_result else '') or 'Unnamed task'
+
+        AsyncResult(task_id).revoke(terminate=False)
+        if task_result:
+            task_result.status = 'REVOKED'
+            task_result.save(update_fields=['status'])
         
         messages.success(request, f'✅ Задача "{task_name}" удалена из очереди')
         logger.info(f"Задача {task_name} (ID: {task_id}) удалена из очереди")
         
         return redirect(request.META.get('HTTP_REFERER', 'asistent:djangoq_tasks_queued'))
         
-    except OrmQ.DoesNotExist:
-        messages.error(request, '❌ Задача не найдена')
-        return redirect('asistent:djangoq_tasks_queued')
     except Exception as e:
         messages.error(request, f'❌ Ошибка удаления задачи: {str(e)}')
         logger.error(f"Ошибка удаления задачи {task_id}: {e}")
@@ -2601,7 +2700,7 @@ def djangoq_task_delete(request, task_id):
 def djangoq_task_create(request):
     """Страница создания новой задачи Django-Q"""
     if request.method == 'POST':
-        from django_q.tasks import async_task, schedule
+        from Asistent.tasks import async_task
         
         func_name = request.POST.get('func_name')
         task_name = request.POST.get('task_name')
@@ -2616,14 +2715,18 @@ def djangoq_task_create(request):
                 return redirect('asistent:djangoq_tasks_queued')
             else:
                 # Создаем расписание
-                from django_q.models import Schedule
                 minutes = int(request.POST.get('minutes', 60))
-                
-                Schedule.objects.create(
-                    func=func_name,
+
+                interval, _ = IntervalSchedule.objects.get_or_create(
+                    every=max(1, minutes),
+                    period=IntervalSchedule.MINUTES,
+                )
+
+                PeriodicTask.objects.create(
                     name=task_name,
-                    schedule_type=Schedule.MINUTES,
-                    minutes=minutes
+                    task=func_name,
+                    interval=interval,
+                    enabled=True,
                 )
                 messages.success(request, f'✅ Расписание "{task_name}" создано! Запуск каждые {minutes} минут.')
                 logger.info(f"Создано расписание: {task_name} (каждые {minutes} мин)")
@@ -2643,82 +2746,42 @@ def djangoq_task_create(request):
     
     return render(request, 'Asistent/djangoq_task_create.html', {
         'available_functions': available_functions,
-        'title': '➕ Создать задачу Django-Q',
-        'page_title': 'Создать задачу Django-Q - IdealImage.ru',
-        'page_description': 'Создание новой задачи Django-Q для выполнения',
+        'title': '➕ Создать задачу Celery',
+        'page_title': 'Создать задачу Celery - IdealImage.ru',
+        'page_description': 'Создание новой задачи Celery для выполнения',
     })
 
 # Детальная информация о задаче
 @staff_member_required
 def djangoq_task_detail(request, task_id, task_type):
     """Детальная информация о задаче"""
-    from django_q.models import OrmQ, Success, Failure
-    
-    task = None
-    model_name = None
-    
-    # OrmQ использует AutoField (числовой ID), Success/Failure используют CharField (UUID)
-    if task_type == 'queued' or task_type == 'active':
-        # OrmQ.id - это числовое поле
-        try:
-            numeric_id = int(task_id)
-            task = get_object_or_404(OrmQ, id=numeric_id)
-            model_name = 'OrmQ'
-        except ValueError:
-            # Если не число, возможно передан UUID - пробуем найти в Success/Failure
-            try:
-                task = Success.objects.get(id=task_id)
-                task_type = 'success'
-                model_name = 'Success'
-            except Success.DoesNotExist:
-                try:
-                    task = Failure.objects.get(id=task_id)
-                    task_type = 'failed'
-                    model_name = 'Failure'
-                except Failure.DoesNotExist:
-                    raise Http404("Задача не найдена")
-    elif task_type == 'success' or task_type == 'recent':
-        task = get_object_or_404(Success, id=task_id)
-        model_name = 'Success'
-    elif task_type == 'failed':
-        task = get_object_or_404(Failure, id=task_id)
+    task_result = TaskResult.objects.filter(task_id=task_id).first()
+    if not task_result:
+        legacy_ormq = _lookup_legacy_djangoq_model('OrmQ', 'djangoq_task_detail')
+        if legacy_ormq:
+            # LEGACY django_q 2026 migration
+            _warn_legacy_queue('djangoq_task_detail:empty_queryset_returned')
+        raise Http404("Задача не найдена")
+
+    task = _to_legacy_task_view(task_result)
+
+    if task_result.status in ('PENDING', 'STARTED'):
+        model_name = 'OrmQ'
+        task_type = 'active' if task_result.status == 'STARTED' else 'queued'
+    elif task_result.status == 'FAILURE':
         model_name = 'Failure'
+        task_type = 'failed'
     else:
-        # task_type == 'all' - пробуем найти в разных моделях
-        # OrmQ использует числовой ID, Success/Failure используют CharField (UUID)
-        
-        # Определяем тип ID
-        is_numeric_id = task_id.isdigit()
-        
-        if is_numeric_id:
-            # Числовой ID - ищем в OrmQ
-            try:
-                task = OrmQ.objects.get(id=int(task_id))
-                model_name = 'OrmQ'
-                task_type = 'queued'
-            except OrmQ.DoesNotExist:
-                raise Http404("Задача не найдена")
-        else:
-            # UUID строка - ищем в Success или Failure
-            try:
-                task = Success.objects.get(id=task_id)
-                model_name = 'Success'
-                task_type = 'success'
-            except Success.DoesNotExist:
-                try:
-                    task = Failure.objects.get(id=task_id)
-                    model_name = 'Failure'
-                    task_type = 'failed'
-                except Failure.DoesNotExist:
-                    raise Http404("Задача не найдена")
+        model_name = 'Success'
+        task_type = 'success'
     
     return render(request, 'Asistent/djangoq_task_detail.html', {
         'task': task,
         'task_type': task_type,
         'model_name': model_name,
         'title': f'Детали задачи',
-        'page_title': f'Детали задачи Django-Q - IdealImage.ru',
-        'page_description': f'Подробная информация о задаче Django-Q',
+        'page_title': f'Детали задачи Celery - IdealImage.ru',
+        'page_description': f'Подробная информация о задаче Celery',
     })
 
 
@@ -2802,31 +2865,30 @@ def content_task_detail(request, task_id):
     task = get_object_or_404(ContentTask, id=task_id)
     assignments = TaskAssignment.objects.filter(task=task).select_related('author', 'author__profile', 'article')
     
-    # Ищем связанные Django-Q задачи
-    from django_q.models import Success, OrmQ
+    # Ищем связанные Celery-задачи (LEGACY django_q 2026 migration)
     related_djangoq_tasks = []
     
-    # Поиск в Success (у Success есть поле name)
-    djangoq_success = Success.objects.filter(
-        name__icontains=task.title
-    ).order_by('-stopped')[:5]
+    celery_success = TaskResult.objects.filter(
+        status='SUCCESS',
+        task_name__icontains=task.title,
+    ).order_by('-date_done')[:5]
     
-    # Поиск в очереди (у OrmQ нет поля name, поэтому берем последние задачи)
-    # В OrmQ kwargs это свойство, содержащее dict
+    # Поиск в pending задачах по kwargs.task_id
     djangoq_queued = []
     try:
-        queued_tasks = OrmQ.objects.all().order_by('-id')[:20]
+        queued_tasks = TaskResult.objects.filter(status__in=['PENDING', 'STARTED']).order_by('-date_created')[:50]
         for q_task in queued_tasks:
-            # Проверяем наличие task_id в kwargs
-            task_kwargs = q_task.kwargs if isinstance(q_task.kwargs, dict) else {}
+            task_kwargs = _safe_parse_payload(q_task.task_kwargs, {})
+            if not isinstance(task_kwargs, dict):
+                task_kwargs = {}
             if task_kwargs.get('task_id') == task.id:
-                djangoq_queued.append(q_task)
+                djangoq_queued.append(_to_legacy_task_view(q_task))
             if len(djangoq_queued) >= 5:
                 break
     except Exception as e:
         logger.error(f"Ошибка поиска связанных Django-Q задач: {e}")
     
-    related_djangoq_tasks = list(djangoq_success) + djangoq_queued
+    related_djangoq_tasks = [_to_legacy_task_view(item) for item in celery_success] + djangoq_queued
     
     return render(request, 'Asistent/content_task_detail.html', {
         'task': task,

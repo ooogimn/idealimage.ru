@@ -10,7 +10,7 @@ import json
 from .models import (
     Donation, DonationNotification, PaymentWebhookLog, DonationSettings,
     AuthorRole, BonusFormula, AuthorStats, AuthorBonus,
-    AuthorPenaltyReward, WeeklyReport, BonusPaymentRegistry, AIBonusCommand
+    AuthorPenaltyReward, WeeklyReport, BonusPaymentRegistry, AIBonusCommand, WebhookEvent
 )
 
 
@@ -195,6 +195,14 @@ class PaymentWebhookLogAdmin(admin.ModelAdmin):
     
     def has_add_permission(self, request):
         return False
+
+
+@admin.register(WebhookEvent)
+class WebhookEventAdmin(admin.ModelAdmin):
+    list_display = ['provider', 'event_id', 'donation', 'processed', 'created_at', 'processed_at']
+    list_filter = ['provider', 'processed', 'created_at']
+    search_fields = ['event_id', 'donation__payment_id']
+    readonly_fields = ['provider', 'event_id', 'payload_hash', 'donation', 'processed', 'created_at', 'processed_at']
 
 
 @admin.register(DonationSettings)

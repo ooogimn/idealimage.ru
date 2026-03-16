@@ -12,6 +12,30 @@ from django.core.files.storage import default_storage
 from PIL import Image
 import io
 
+def get_ffmpeg_path():
+    """Возвращает путь к ffmpeg или его имя для PATH"""
+    # 1. Проверяем локально в проекте (Windows)
+    local_win = os.path.join(settings.BASE_DIR, 'ffmpeg_bin', 'ffmpeg.exe')
+    if os.path.exists(local_win):
+        return local_win
+    # 2. Проверяем локально в проекте (Linux/Mac)
+    local_nix = os.path.join(settings.BASE_DIR, 'ffmpeg_bin', 'ffmpeg')
+    if os.path.exists(local_nix):
+        return local_nix
+    # 3. Системный путь
+    return 'ffmpeg'
+
+def get_ffprobe_path():
+    """Возвращает путь к ffprobe или его имя для PATH"""
+    local_win = os.path.join(settings.BASE_DIR, 'ffmpeg_bin', 'ffprobe.exe')
+    if os.path.exists(local_win):
+        return local_win
+    local_nix = os.path.join(settings.BASE_DIR, 'ffmpeg_bin', 'ffprobe')
+    if os.path.exists(local_nix):
+        return local_nix
+    return 'ffprobe'
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,7 +48,7 @@ def check_ffmpeg_available():
     """
     try:
         result = subprocess.run(
-            ['ffmpeg', '-version'],
+            [get_ffmpeg_path(), '-version'],
             capture_output=True,
             text=True,
             timeout=5
@@ -49,7 +73,7 @@ def get_video_info(video_path):
     
     try:
         cmd = [
-            'ffprobe',
+            get_ffprobe_path(),
             '-v', 'quiet',
             '-print_format', 'json',
             '-show_format',
@@ -124,7 +148,7 @@ def create_video_poster(video_path, output_path=None, time_offset=1.0):
         
         # Извлекаем кадр через FFmpeg с правильным масштабированием
         cmd = [
-            'ffmpeg',
+            get_ffmpeg_path(),
             '-i', video_path,
             '-ss', str(time_offset),  # Время извлечения
             '-vframes', '1',  # Только один кадр
@@ -171,7 +195,7 @@ def create_video_poster(video_path, output_path=None, time_offset=1.0):
         return None
 
 
-def optimize_video(input_path, output_path=None, max_bitrate='3M', max_resolution='1920x1080'):
+def optimize_video(input_path, output_path=None, max_bitrate='3M', max_resolution='1920x1080', generate_preview=False):
     """
     Оптимизирует видео: сжимает, уменьшает битрейт, разрешение
     
@@ -180,9 +204,10 @@ def optimize_video(input_path, output_path=None, max_bitrate='3M', max_resolutio
         output_path: Путь для сохранения оптимизированного видео
         max_bitrate: Максимальный битрейт (например '3M' для 3 Mbps)
         max_resolution: Максимальное разрешение (например '1920x1080')
+        generate_preview: Если True, также создаст короткое превью
     
     Returns:
-        str: Путь к оптимизированному видео или None
+        str or tuple: Путь к оптимизированному видео или (optimized_path, preview_path)
     """
     if not check_ffmpeg_available():
         logger.warning('FFmpeg не доступен, видео не будет оптимизировано')
@@ -225,7 +250,7 @@ def optimize_video(input_path, output_path=None, max_bitrate='3M', max_resolutio
         # Команда FFmpeg для оптимизации
         # Используем H.264 кодек с оптимальными настройками
         cmd = [
-            'ffmpeg',
+            get_ffmpeg_path(),
             '-i', input_path,
             '-c:v', 'libx264',  # H.264 кодек
             '-preset', 'medium',  # Баланс скорость/качество
@@ -247,20 +272,32 @@ def optimize_video(input_path, output_path=None, max_bitrate='3M', max_resolutio
             timeout=600  # 10 минут максимум
         )
         
+        preview_path = None
+        if generate_preview:
+            logger.info(f'Создание превью в процессе оптимизации для {input_path}')
+            preview_path = create_video_preview(input_path)
+
         if result.returncode == 0 and os.path.exists(output_path):
-            # Проверяем размер - если оптимизированное больше оригинала, возвращаем None
+            # Проверяем размер - если оптимизированное больше оригинала, возвращаем None для оптимизированного
             original_size = os.path.getsize(input_path)
             optimized_size = os.path.getsize(output_path)
             
+            final_optimized_path = output_path
             if optimized_size >= original_size:
                 logger.info(f'Оптимизированное видео больше оригинала, используем оригинал')
-                os.remove(output_path)
-                return None
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+                final_optimized_path = None
+            else:
+                logger.info(f'Видео оптимизировано: {original_size / (1024*1024):.1f}MB -> {optimized_size / (1024*1024):.1f}MB')
             
-            logger.info(f'Видео оптимизировано: {original_size / (1024*1024):.1f}MB -> {optimized_size / (1024*1024):.1f}MB')
-            return output_path
+            if generate_preview:
+                return final_optimized_path, preview_path
+            return final_optimized_path
         
         logger.error(f'Ошибка оптимизации видео: {result.stderr}')
+        if generate_preview:
+            return None, preview_path
         return None
     
     except subprocess.TimeoutExpired:
@@ -328,3 +365,57 @@ def validate_video_file(video_file):
     
     return True, None
 
+def create_video_preview(input_path, output_path=None, duration=5):
+    """
+    Создает короткое (5 сек) превью видео низкого качества без звука
+    
+    Args:
+        input_path: Полный путь к исходному видео
+        output_path: Путь для сохранения превью
+        duration: Длительность превью в секундах
+    
+    Returns:
+        str: Путь к превью или None
+    """
+    if not check_ffmpeg_available():
+        return None
+        
+    try:
+        if not output_path:
+            video_dir = os.path.dirname(input_path)
+            video_name = Path(input_path).stem
+            output_path = os.path.join(video_dir, f'{video_name}_preview.mp4')
+            
+        # Команда FFmpeg:
+        # -t: длительность
+        # -an: убрать звук
+        # -vf scale: уменьшаем разрешение (например, до 480p или меньше)
+        # -crf: очень низкое качество (высокое число) для минимального веса
+        cmd = [
+            get_ffmpeg_path(),
+            '-i', input_path,
+            '-t', str(duration),
+            '-an', # убрать звук
+            '-vf', 'scale=480:-2', # ширина 480, высота пропорционально (четная)
+            '-c:v', 'libx264',
+            '-preset', 'veryfast',
+            '-crf', '32', # Низкое качество
+            '-movflags', '+faststart',
+            '-y',
+            output_path
+        ]
+        
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60
+        )
+        
+        if result.returncode == 0 and os.path.exists(output_path):
+            return output_path
+            
+        return None
+    except Exception as e:
+        logger.error(f'Ошибка создания превью видео: {e}')
+        return None

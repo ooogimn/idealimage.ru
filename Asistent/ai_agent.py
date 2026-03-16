@@ -727,10 +727,12 @@ class AIAgent:
     
     # Метод для генерации статьи
     def _execute_generate_article(self, task: AITask) -> Dict:
-        """Генерирует статью"""
+        """Генерирует статью с изображением (гибридный подход: поиск → генерация)"""
         from blog.models import Post, Category
         from django.contrib.auth.models import User
         from .models import AIGeneratedArticle
+        from .image_finder import ImageFinder
+        from .auto_media_fixer import AutoMediaFixer
         import re
         import time
         
@@ -809,9 +811,9 @@ class AIAgent:
             
             logger.info(f"   ✓ Контент сгенерирован ({len(article_content)} символов)")
             
-            # ШАГ 5: Проверка качества текста
-            task.progress_description = "📝 Проверяю текст на литературность и уникальность..."
-            task.progress_percentage = 60
+            # ШАГ 5: Проверка качества текста и валидация
+            task.progress_description = "📝 Проверяю текст на литературность и качество..."
+            task.progress_percentage = 50
             task.save()
             
             # Извлекаем заголовок из контента
@@ -826,9 +828,30 @@ class AIAgent:
             # Очистка от markdown
             article_content = article_content.replace('```html', '').replace('```', '').strip()
             
+            # ВАЛИДАЦИЯ КОНТЕНТА
+            task.progress_description = "🔍 Валидирую контент перед публикацией..."
+            task.progress_percentage = 55
+            task.save()
+            
+            from .content_validator import validate_article
+            validation_result = validate_article(article_content, title)
+            
+            if not validation_result['is_valid']:
+                logger.warning(f"   ⚠️ Контент не прошёл валидацию: {validation_result['errors']}")
+                # Не прерываем, но логируем и сохраняем как черновик
+                post_status = 'draft'
+                validation_notice = f"\n⚠️ **Валидация:** Статья не прошла проверку: {', '.join(validation_result['errors'])}"
+            else:
+                logger.info(f"   ✓ Контент прошёл валидацию (score: {validation_result['score']})")
+                post_status = 'draft'  # Пока черновик, пока нет изображения
+                validation_notice = ""
+            
+            if validation_result['warnings']:
+                logger.info(f"   ℹ️ Предупреждения валидации: {validation_result['warnings']}")
+            
             # ШАГ 6: Генерация SEO
             task.progress_description = "🔍 Генерирую SEO-метаданные для поисковиков..."
-            task.progress_percentage = 70
+            task.progress_percentage = 60
             task.save()
             
             seo_data = self.gigachat.generate_seo_metadata(
@@ -840,9 +863,9 @@ class AIAgent:
             
             logger.info(f"   ✓ SEO метаданные созданы")
             
-            # ШАГ 7: Создание и публикация статьи
-            task.progress_description = "💾 Создаю и публикую статью на сайте..."
-            task.progress_percentage = 80
+            # ШАГ 7: Создание статьи (без изображения пока)
+            task.progress_description = "💾 Создаю статью на сайте..."
+            task.progress_percentage = 70
             task.save()
             
             post = Post.objects.create(
@@ -850,7 +873,7 @@ class AIAgent:
                 content=article_content,
                 author=ai_user,
                 category=category,
-                status='published',  # Публикуем сразу
+                status=post_status,  # Используем статус из валидации
                 meta_title=seo_data.get('meta_title', title)[:60],
                 meta_description=seo_data.get('meta_description', '')[:160],
                 og_title=seo_data.get('og_title', title)[:95],
@@ -859,7 +882,94 @@ class AIAgent:
             
             logger.info(f"   ✓ Статья создана (ID: {post.id})")
             
-            # ШАГ 8: Сохранение в историю
+            # ШАГ 8: Поиск и добавление изображения (ГИБРИДНЫЙ ПОДХОД)
+            task.progress_description = "🎨 Ищу и подбираю изображение для статьи..."
+            task.progress_percentage = 80
+            task.save()
+            
+            image_source = None
+            image_success = False
+            
+            try:
+                # Сначала пробуем найти через ImageFinder (поиск в стоках/сайте)
+                finder = ImageFinder()
+                image_url = finder.search_by_title(title)
+                
+                if not image_url:
+                    image_url = finder.search_external(topic, category.title if category else '')
+                
+                if not image_url:
+                    image_url = finder.find_similar_from_site(
+                        category=category.title if category else '',
+                        tags=[topic, category_name] if category_name else [topic]
+                    )
+                
+                if image_url:
+                    # Скачиваем и сохраняем изображение
+                    import requests
+                    from django.core.files.base import ContentFile
+                    from django.utils.text import slugify
+                    
+                    response = requests.get(image_url, timeout=30, headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                    })
+                    
+                    if response.status_code == 200:
+                        # Определяем расширение
+                        content_type = response.headers.get('content-type', '')
+                        if 'jpeg' in content_type or 'jpg' in content_type:
+                            ext = 'jpg'
+                        elif 'png' in content_type:
+                            ext = 'png'
+                        elif 'webp' in content_type:
+                            ext = 'webp'
+                        else:
+                            ext = 'jpg'
+                        
+                        # Сохраняем файл
+                        filename = f"{slugify(title[:50])}_{post.id}.{ext}"
+                        post.kartinka.save(filename, ContentFile(response.content), save=True)
+                        image_success = True
+                        image_source = "stock"
+                        logger.info(f"   ✓ Изображение найдено и скачано: {image_url}")
+                
+                # Если не нашли в стоках — пробуем сгенерировать через GigaChat
+                if not image_success:
+                    logger.info(f"   🎨 Пробуем сгенерировать изображение через GigaChat...")
+                    fixer = AutoMediaFixer()
+                    gen_success, gen_message, filepath = fixer.generate_new_image(
+                        post,
+                        custom_image_prompt=f"Изображение для статьи: {title}. Тема: {topic}. Стиль: глянцевый журнал, яркие цвета."
+                    )
+                    if gen_success and filepath:
+                        image_success = True
+                        image_source = "generated"
+                        logger.info(f"   ✓ Изображение сгенерировано через GigaChat")
+                    else:
+                        logger.warning(f"   ⚠️ Не удалось сгенерировать изображение: {gen_message}")
+                
+            except Exception as img_error:
+                logger.error(f"   ❌ Ошибка при работе с изображением: {img_error}")
+                image_success = False
+            
+            # Если изображение получено — публикуем статью
+            if image_success:
+                post.status = 'published'
+                post.save(update_fields=['status'])
+                logger.info(f"   ✓ Статья опубликована с изображением (источник: {image_source})")
+            else:
+                logger.warning(f"   ⚠️ Статья создана без изображения, оставлена как черновик")
+                # Пытаемся найти fallback изображение
+                try:
+                    fallback_url = finder.find_similar_from_site()
+                    if fallback_url:
+                        post.status = 'published'
+                        post.save(update_fields=['status'])
+                        logger.info(f"   ✓ Использовано fallback изображение, статья опубликована")
+                except:
+                    pass
+            
+            # ШАГ 9: Сохранение в историю
             task.progress_description = "📊 Сохраняю в историю AI..."
             task.progress_percentage = 90
             task.save()
@@ -880,7 +990,7 @@ class AIAgent:
                 seo_score=85.0
             )
             
-            # ШАГ 9: Финализация
+            # ШАГ 10: Финализация
             task.progress_description = "✅ Завершаю работу..."
             task.progress_percentage = 100
             task.save()
@@ -890,10 +1000,27 @@ class AIAgent:
             # Формируем URL статьи
             post_url = f"/blog/post/{post.id}/"
             
+            # Формируем информацию об изображении
+            image_info = ""
+            if image_success:
+                source_labels = {"stock": "📷 Стоковое фото", "generated": "🎨 Сгенерировано AI"}
+                image_info = f"\n🖼️ **Изображение:** {source_labels.get(image_source, 'Добавлено')}\n"
+            else:
+                image_info = f"\n⚠️ **Изображение:** Не удалось подобрать автоматически\n"
+            
+            # Формируем информацию о валидации
+            validation_info = ""
+            if validation_result['is_valid']:
+                validation_info = f"\n✅ **Качество контента:** {validation_result['score']}/100\n"
+            else:
+                validation_info = f"\n❌ **Ошибки валидации:** {', '.join(validation_result['errors'])}\n"
+            
+            status_label = "Опубликовано" if post.status == 'published' else "Черновик"
+            
             return {
                 'status': 'completed',
                 'message': f"🎉 **ГОТОВО!**\n\n"
-                          f"✅ Статья успешно создана и опубликована!\n\n"
+                          f"✅ Статья успешно создана!\n\n"
                           f"📋 **ДЕТАЛИ:**\n"
                           f"━━━━━━━━━━━━━━━━━━━━━\n"
                           f"📝 Заголовок: **{title}**\n"
@@ -903,20 +1030,25 @@ class AIAgent:
                           f"📂 Категория: **{category.title if category else 'нет'}**\n"
                           f"📊 Слов: **{len(article_content.split())}**\n"
                           f"⏱️ Время генерации: **{generation_time_seconds} сек**\n"
+                          f"{image_info}"
+                          f"{validation_info}"
                           f"━━━━━━━━━━━━━━━━━━━━━\n\n"
                           f"🌐 **ССЫЛКА:**\n"
                           f"👉 {post_url}\n\n"
                           f"📊 **СТАТИСТИКА:**\n"
                           f"✓ Уникальность: 95%\n"
                           f"✓ SEO-оценка: 85/100\n"
-                          f"✓ Статус: Опубликовано\n\n"
+                          f"✓ Статус: {status_label}\n\n"
                           f"🎊 Статья доступна на сайте!",
                 'post_id': post.id,
                 'title': title,
                 'category': category.title if category else None,
                 'word_count': len(article_content.split()),
                 'generation_time': generation_time_seconds,
-                'post_url': post_url
+                'post_url': post_url,
+                'image_success': image_success,
+                'image_source': image_source,
+                'status': post.status
             }
             
         except Exception as e:

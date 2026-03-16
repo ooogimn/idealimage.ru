@@ -7,6 +7,7 @@ from blog.models import Post
 from blog.utils_video_processing import (
     optimize_video, 
     create_video_poster, 
+    create_video_preview,
     get_video_info,
     check_ffmpeg_available
 )
@@ -40,12 +41,18 @@ class Command(BaseCommand):
             action='store_true',
             help='Пропустить создание poster, только оптимизировать',
         )
+        parser.add_argument(
+            '--skip-preview',
+            action='store_true',
+            help='Пропустить создание 5-секундного превью',
+        )
 
     def handle(self, *args, **options):
         force = options['force']
         limit = options.get('limit')
         skip_optimization = options.get('skip_optimization', False)
         skip_poster = options.get('skip_poster', False)
+        skip_preview = options.get('skip_preview', False)
         
         # Проверяем FFmpeg
         if not check_ffmpeg_available():
@@ -91,6 +98,7 @@ class Command(BaseCommand):
             'processed': 0,
             'posters_created': 0,
             'videos_optimized': 0,
+            'previews_created': 0,
             'errors': 0,
             'skipped': 0,
         }
@@ -131,6 +139,26 @@ class Command(BaseCommand):
                             self.stdout.write(self.style.WARNING('  ⚠️ Не удалось создать poster'))
                     else:
                         self.stdout.write('  ⏭️ Poster уже существует')
+                
+                # Создаем короткое превью (5 сек)
+                if not skip_preview:
+                    if not post.video_preview or force:
+                        self.stdout.write('  🎬 Создание 5-секундного превью...')
+                        preview_path = create_video_preview(video_path)
+                        if preview_path and os.path.exists(preview_path):
+                            with open(preview_path, 'rb') as f:
+                                post.video_preview.save(
+                                    f'preview_{post.slug or post.pk}.mp4',
+                                    File(f),
+                                    save=False
+                                )
+                            os.remove(preview_path)
+                            stats['previews_created'] += 1
+                            self.stdout.write(self.style.SUCCESS('  ✅ Превью создано'))
+                        else:
+                            self.stdout.write(self.style.WARNING('  ⚠️ Не удалось создать превью'))
+                    else:
+                        self.stdout.write('  ⏭️ Превью уже существует')
                 
                 # Оптимизируем видео
                 if not skip_optimization:
@@ -179,6 +207,7 @@ class Command(BaseCommand):
                             'video_processing_status', 
                             'video_duration',
                             'video_poster',
+                            'video_preview',
                             'kartinka'
                         ])
                 
@@ -201,6 +230,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS('✅ Обработка завершена'))
         self.stdout.write(f'📊 Обработано: {stats["processed"]}')
         self.stdout.write(f'🖼️ Poster создано: {stats["posters_created"]}')
+        self.stdout.write(f'🎬 Превью создано: {stats["previews_created"]}')
         self.stdout.write(f'⚙️ Видео оптимизировано: {stats["videos_optimized"]}')
         self.stdout.write(f'⏭️ Пропущено: {stats["skipped"]}')
         if stats['errors'] > 0:

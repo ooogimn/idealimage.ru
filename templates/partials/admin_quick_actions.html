@@ -47,9 +47,9 @@
         </button>
         
         <!-- Мониторинг -->
-        <a href="/admin/django_q/" target="_blank"
+        <a href="/admin/django_celery_results/taskresult/" target="_blank"
            class="flex items-center gap-3 bg-orange-600 hover:bg-orange-700 dark:bg-orange-700 dark:hover:bg-orange-800 text-white px-4 py-3 rounded-lg shadow-lg transition-all transform hover:scale-105"
-           data-tippy-content="Открыть мониторинг Django-Q">
+           data-tippy-content="Открыть мониторинг Celery">
             <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
                 <path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5a1 1 0 01-1 1H3a1 1 0 01-1-1v-5zM8 7a1 1 0 011-1h2a1 1 0 011 1v9a1 1 0 01-1 1H9a1 1 0 01-1-1V7zM14 4a1 1 0 011-1h2a1 1 0 011 1v12a1 1 0 01-1 1h-2a1 1 0 01-1-1V4z"></path>
             </svg>
@@ -126,7 +126,7 @@ async function syncSchedules() {
         });
         
         if (response.ok) {
-            alert('✅ Расписания синхронизированы с Django-Q!');
+            alert('✅ Расписания синхронизированы с Celery Beat!');
         } else {
             alert('❌ Ошибка синхронизации');
         }

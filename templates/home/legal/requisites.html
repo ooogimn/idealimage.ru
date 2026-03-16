@@ -1,0 +1,58 @@
+{% extends 'base_tailwind.html' %}
+{% load static %}
+
+{% block page_header %}
+<div class="gradient-primary rounded-2xl p-8 md:p-12 mb-8 text-white fade-in mt-6">
+    <div class="max-w-4xl mx-auto text-center">
+        <h1 class="text-4xl md:text-5xl font-heading font-bold mb-4">Реквизиты и контакты</h1>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto bg-white dark:bg-gray-800 rounded-2xl shadow-lg p-8 mb-8 fade-in h-full">
+    <div class="prose dark:prose-invert max-w-none space-y-4 text-gray-700 dark:text-gray-300">
+
+        <p class="text-sm text-gray-500 dark:text-gray-400 italic">Редакция 1.0 от 02.03.2026. Дата вступления в силу: 02.03.2026.</p>
+
+        <div class="bg-gradient-to-r from-primary/10 to-secondary/10 p-6 rounded-xl my-6">
+            <h3 class="text-xl font-bold mb-4 text-gray-900 dark:text-white">Сведения об операторе</h3>
+            <ul class="space-y-3">
+                <li><strong>Полное наименование:</strong> ОБЩЕСТВО С ОГРАНИЧЕННОЙ ОТВЕТСТВЕННОСТЬЮ "ЛукИинтерЛаб"</li>
+                <li><strong>Сокращенное наименование:</strong> ООО "ЛукИнтерЛаб"</li>
+                <li><strong>ОГРН:</strong> 1257700465219</li>
+                <li><strong>ИНН:</strong> 9717184870</li>
+                <li><strong>КПП:</strong> 771701001</li>
+                <li><strong>Юридический адрес:</strong> 129164, г. Москва, вн.тер.г. муниципальный округ Алексеевский, ул. Ярославская, д. 9, оф. 85</li>
+                <li><strong>Генеральный директор:</strong> Лукьянов Сергей Юрьевич</li>
+                <li><strong>Регистрирующий орган:</strong> Межрайонная инспекция Федеральной налоговой службы № 46 по г. Москве</li>
+            </ul>
+        </div>
+
+        <div class="bg-gradient-to-r from-green-50 to-teal-50 dark:from-green-900/20 dark:to-teal-900/20 p-6 rounded-xl my-6">
+            <h3 class="text-xl font-bold mb-4 text-gray-900 dark:text-white">Банковские реквизиты</h3>
+            <ul class="space-y-2">
+                <li><strong>Банк:</strong> ООО "Банк Точка"</li>
+                <li><strong>БИК:</strong> 044525104</li>
+                <li><strong>ОГРН банка:</strong> 1237700005157</li>
+                <li><strong>ИНН банка:</strong> 9721194461</li>
+                <li><strong>КПП банка:</strong> 772301001</li>
+                <li><strong>Расчетный счет:</strong> 40702810520000251817</li>
+                <li><strong>Корреспондентский счет:</strong> 30101810745374525104</li>
+            </ul>
+        </div>
+
+        <div class="bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-900/20 dark:to-pink-900/20 p-6 rounded-xl my-6">
+            <h3 class="text-xl font-bold mb-4 text-gray-900 dark:text-white">Контакты</h3>
+            <ul class="space-y-3">
+                <li><strong>Телефон:</strong> <a href="tel:+79939197575" class="text-primary hover:underline">+7 993 919 75 75</a></li>
+                <li><strong>Email:</strong> <a href="mailto:LukInterLab@gmail.com" class="text-primary hover:underline">LukInterLab@gmail.com</a></li>
+                <li><strong>Сайт:</strong> <a href="https://lukinterlab.ru/" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">https://lukinterlab.ru/</a></li>
+                <li><strong>Telegram:</strong> <a href="https://t.me/LukInterLab" target="_blank" rel="noopener noreferrer" class="text-primary hover:underline">https://t.me/LukInterLab</a></li>
+                <li><strong>Почтовый адрес:</strong> 129164, г. Москва, Ярославская ул., д. 9, оф. 85</li>
+            </ul>
+        </div>
+
+    </div>
+</div>
+{% endblock %}

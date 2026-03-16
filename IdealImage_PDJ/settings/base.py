@@ -76,6 +76,7 @@ MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'whitenoise.middleware.WhiteNoiseMiddleware',  # Раздача статики с компрессией
     'django.contrib.sessions.middleware.SessionMiddleware',
+    'IdealImage_PDJ.middleware_consent.ConsentMiddleware',  # Считываем cookie-consent в request
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -142,11 +143,11 @@ else:
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': config('DB_NAME'),
-            'USER': config('DB_USER'),
-            'PASSWORD': config('DB_PASSWORD'),
-            'HOST': config('DB_HOST', default='localhost'),
-            'PORT': config('DB_PORT', default='5432'),
+            'NAME': config('POSTGRES_DB', default=config('DB_NAME', default='idealimage')),
+            'USER': config('POSTGRES_USER', default=config('DB_USER', default='ideal')),
+            'PASSWORD': config('POSTGRES_PASSWORD', default=config('DB_PASSWORD', default='')),
+            'HOST': config('POSTGRES_HOST', default=config('DB_HOST', default='localhost')),
+            'PORT': config('POSTGRES_PORT', default=config('DB_PORT', default='5432')),
             'OPTIONS': {
                 'connect_timeout': 10,
             },
@@ -342,6 +343,8 @@ CHAT_ID16 = config('CHAT_ID16', default='@Little_mommys_ru')
 CHAT_ID17 = config('CHAT_ID17', default='@LapaBebi')
 CHAT_ID18 = config('CHAT_ID18', default='@Lackomca')
 ADMIN_ALERT_CHAT_ID = config('ADMIN_ALERT_CHAT_ID', default='')
+YOOKASSA_WEBHOOK_SECRET = config('YOOKASSA_WEBHOOK_SECRET', default='')
+SBER_WEBHOOK_SECRET = config('SBER_WEBHOOK_SECRET', default='')
 
 api_id = config('API_ID', default='19894195')
 api_hash = config('API_HASH', default='')
@@ -410,7 +413,6 @@ JAZZMIN_SETTINGS = {
         "donations",     # Донаты
         "Telega",        # Telegram
         "auth",          # Аутентификация
-        "django_q",      # Фоновые задачи
     ],
     
     # Иконки для моделей
@@ -461,11 +463,6 @@ JAZZMIN_SETTINGS = {
         # === TELEGRAM ===
         "Telega": "fab fa-telegram",
         "Telega.TelegramPublication": "fas fa-paper-plane",
-        
-        # === ФОНОВЫЕ ЗАДАЧИ ===
-        "django_q": "fas fa-tasks",
-        "django_q.Schedule": "fas fa-clock",
-        "django_q.Task": "fas fa-spinner",
         
         # === СИСТЕМА ===
         "admin.LogEntry": "fas fa-file",

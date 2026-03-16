@@ -157,7 +157,7 @@ class Command(BaseCommand):
         self.stdout.write('\n[3/5] Проверяю расписания...')
         
         from Asistent.models import AISchedule  # Через __getattr__
-        from django_q.models import Schedule as DQSchedule
+        from django_celery_beat.models import PeriodicTask
         
         # Неактивные расписания
         inactive_schedules = AISchedule.objects.filter(is_active=False).count()
@@ -173,12 +173,16 @@ class Command(BaseCommand):
         )
         schedule_not_found_count = recent_failed.count()
         
-        # Проверка синхронизации Django-Q с AISchedule
-        dq_schedules = DQSchedule.objects.filter(func='Asistent.tasks.run_specific_schedule')
+        # Проверка синхронизации Celery Beat с AISchedule
+        dq_schedules = PeriodicTask.objects.filter(task='Asistent.tasks.run_specific_schedule')
         missing_schedules = []
         for dq_schedule in dq_schedules:
             try:
-                schedule_id = int(dq_schedule.args)
+                import json
+                args = json.loads(dq_schedule.args or '[]')
+                schedule_id = int(args[0]) if args else None
+                if schedule_id is None:
+                    continue
                 if not AISchedule.objects.filter(id=schedule_id, is_active=True).exists():
                     missing_schedules.append(schedule_id)
             except (ValueError, AttributeError):
@@ -211,7 +215,7 @@ class Command(BaseCommand):
                 message += f"💡 РЕШЕНИЕ: Запустите 'python manage.py sync_schedules --force' для очистки\n"
             
             if len(missing_schedules) > 0:
-                message += f"\n⚠️ Django-Q содержит расписания для несуществующих AISchedule: {missing_schedules}\n"
+                message += f"\n⚠️ Celery Beat содержит расписания для несуществующих AISchedule: {missing_schedules}\n"
                 message += f"💡 РЕШЕНИЕ: Запустите 'python manage.py sync_schedules --force' для синхронизации\n"
             
             AIMessage.objects.create(
@@ -224,7 +228,7 @@ class Command(BaseCommand):
             if schedule_not_found_count > 0:
                 self.stdout.write(self.style.ERROR(f'[CRITICAL] Ошибок schedule_not_found: {schedule_not_found_count}'))
             if len(missing_schedules) > 0:
-                self.stdout.write(self.style.WARNING(f'[!] Несуществующих расписаний в Django-Q: {len(missing_schedules)}'))
+                self.stdout.write(self.style.WARNING(f'[!] Несуществующих расписаний в Celery Beat: {len(missing_schedules)}'))
         else:
             self.stdout.write('[OK] Расписания в порядке')
         
@@ -292,13 +296,13 @@ class Command(BaseCommand):
         # ==================================================================
         self.stdout.write('\n[5/5] Проверяю систему...')
         
-        # Проверка Django-Q
+        # Проверка Celery Beat
         try:
-            from django_q.models import Schedule as DQSchedule
-            dq_schedules_count = DQSchedule.objects.count()
-            self.stdout.write(f'[OK] Django-Q: {dq_schedules_count} расписаний')
+            from django_celery_beat.models import PeriodicTask
+            dq_schedules_count = PeriodicTask.objects.count()
+            self.stdout.write(f'[OK] Celery Beat: {dq_schedules_count} расписаний')
         except Exception as e:
-            self.stdout.write(f'[!] Django-Q: {str(e)}')
+            self.stdout.write(f'[!] Celery Beat: {str(e)}')
         
         # Проверка базы знаний
         from Asistent.models import AIKnowledgeBase

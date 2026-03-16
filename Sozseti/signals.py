@@ -37,7 +37,7 @@ def auto_publish_to_social(sender, instance, created, **kwargs):
         return
 
     try:
-        from django_q.tasks import async_task
+        from Asistent.tasks import async_task
 
         task_name = f"auto_social_post_{instance.id}"
 
@@ -45,8 +45,6 @@ def auto_publish_to_social(sender, instance, created, **kwargs):
             'Sozseti.tasks.publish_post_to_social',
             instance.id,
             task_name=task_name,
-            group='auto_social_posts',
-            priority=5,
         )
 
         logger.info("🗓️ Запланирована автопубликация статьи '%s' (task=%s)", instance.title, task_name)

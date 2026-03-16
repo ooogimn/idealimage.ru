@@ -1,6 +1,6 @@
 """
-Скрипт для проверки и исправления расписаний гороскопов
-Проверяет настройки, Django-Q синхронизацию и исправляет проблемы
+Скрипт для проверки и исправления расписаний гороскопов.
+Проверяет настройки и синхронизацию с Celery Beat.
 """
 import os
 import sys
@@ -13,7 +13,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'IdealImage_PDJ.settings')
 django.setup()
 
 from django.utils import timezone
-from django_q.models import Schedule as DQSchedule
+from django_celery_beat.models import PeriodicTask
 from Asistent.schedule.models import AISchedule
 from Asistent.models import PromptTemplate
 from datetime import time
@@ -56,14 +56,17 @@ def check_horoscope_schedules():
         generation_delay = payload.get('generation_delay', 20)
         print(f"   Интервал между гороскопами: {generation_delay} секунд")
         
-        # Проверяем Django-Q расписание
+        # Проверяем Celery Beat расписание
         dq_name = f'ai_schedule_{schedule.id}'
         try:
-            dq_schedule = DQSchedule.objects.get(name=dq_name)
-            print(f"   Django-Q: [OK] Найдено (CRON: {dq_schedule.cron}, Next: {dq_schedule.next_run})")
-        except DQSchedule.DoesNotExist:
-            print(f"   Django-Q: [ERROR] НЕ НАЙДЕНО!")
-            issues.append(f"Расписание ID={schedule.id} не синхронизировано с Django-Q")
+            beat_schedule = PeriodicTask.objects.get(name=dq_name)
+            print(
+                f"   Celery Beat: [OK] Найдено (Task: {beat_schedule.task}, "
+                f"Last run: {beat_schedule.last_run_at})"
+            )
+        except PeriodicTask.DoesNotExist:
+            print(f"   Celery Beat: [ERROR] НЕ НАЙДЕНО!")
+            issues.append(f"Расписание ID={schedule.id} не синхронизировано с Celery Beat")
         
         # Проверяем проблемы
         if not schedule.is_active:
@@ -134,10 +137,10 @@ def fix_schedules():
             schedule.update_next_run()
             fixed_count += 1
     
-    # Синхронизируем с Django-Q
+    # Синхронизируем с Celery Beat
     if fixed_count > 0:
         print()
-        print("[SYNC] Синхронизация с Django-Q...")
+        print("[SYNC] Синхронизация с Celery Beat...")
         try:
             from django.core.management import call_command
             call_command('sync_schedules', '--force')

@@ -688,7 +688,7 @@ def submit_task_assignment(request, assignment_id):
         messages.success(request, '⏳ Статья отправлена на AI модерацию...')
 
         try:
-            from django_q.tasks import async_task
+            from Asistent.tasks import async_task
             task_id = async_task('Asistent.tasks.moderate_task_article_task', assignment.id)
             messages.info(request, f'🤖 AI-Ассистент проверяет вашу статью. Результат придёт в уведомлениях.')
         except Exception as e:

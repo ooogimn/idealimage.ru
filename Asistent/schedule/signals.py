@@ -44,27 +44,28 @@ def sync_ai_schedule_on_save(sender, instance, created, **kwargs):
         periodic_task = PeriodicTask.objects.get(name=task_name)
         # Обновляем существующую задачу
         periodic_task.task = 'Asistent.tasks.run_specific_schedule'
-        periodic_task.args = json.dumps([instance.id])
-        periodic_task.kwargs = json.dumps({})
+        periodic_task.args = json.dumps([])
+        periodic_task.kwargs = json.dumps({'schedule_id': instance.id})
         periodic_task.enabled = True
-        
-        # Обновляем расписание
-        if isinstance(schedule, CrontabSchedule):
-            periodic_task.crontab = schedule
+
+        # Обновляем расписание — schedule это dict {'interval': obj} или {'crontab': obj}
+        if 'crontab' in schedule:
+            periodic_task.crontab = schedule['crontab']
             periodic_task.interval = None
-        else:
-            periodic_task.interval = schedule
+        elif 'interval' in schedule:
+            periodic_task.interval = schedule['interval']
             periodic_task.crontab = None
-            
+
         periodic_task.save()
         logger.info("♻️ Обновлено расписание %s", instance.name)
+
     except PeriodicTask.DoesNotExist:
         # Создаём новое расписание
         periodic_task = PeriodicTask.objects.create(
             name=task_name,
             task='Asistent.tasks.run_specific_schedule',
-            args=json.dumps([instance.id]),
-            kwargs=json.dumps({}),
+            args=json.dumps([]),
+            kwargs=json.dumps({'schedule_id': instance.id}),
             **schedule
         )
         logger.info("✨ Создано расписание %s", instance.name)

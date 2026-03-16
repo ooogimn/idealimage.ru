@@ -462,16 +462,19 @@ class Portal(models.Model):
             try:
                 from .image_optimizer import ImageOptimizer
                 
-                # Оптимизируем изображение
+                # Оптимизируем изображение (уменьшаем размер и качество для сверхбыстрой загрузки)
                 optimized, extension = ImageOptimizer.optimize_image(
                     self.image.file,
-                    max_size=(400, 300),
+                    max_size=(320, 240),
                     format='webp'
                 )
-                
                 if optimized:
-                    original_name = os.path.splitext(self.image.name)[0]
-                    new_name = f"{original_name}_portal.{extension}"
+                    # Генерируем только имя файла (без пути), так как Django сам добавит подпапку из upload_to
+                    original_filename = os.path.basename(self.image.name)
+                    name_base = os.path.splitext(original_filename)[0]
+                    new_name = f"{name_base}_portal.{extension}"
+                    
+                    # Заменяем файл оптимизированным
                     self.image.save(new_name, optimized, save=False)
                     logger.info(f"Optimized portal image: {self.name}")
                     

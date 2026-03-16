@@ -123,10 +123,10 @@ def home(request):
         ).order_by('-updated')[:3]
         cache.set('home_latest_posts', list(latest_posts), 300)  # 5 минут
     
-    # Топ 40 статей по просмотрам за всё время (кэшируем на 30 минут)
+    # Топ 12 статей по просмотрам за всё время (кэшируем на 30 минут)
     top_posts = cache.get('landing_top_posts')
     if top_posts is None:
-        # Берем топ 40 статей по просмотрам БЕЗ ограничения по дате
+        # Берем топ 12 статей по просмотрам БЕЗ ограничения по дате
         # Оптимизация: используем аннотации вместо prefetch_related для likes/comments
         top_posts = Post.objects.filter(
             status='published'
@@ -136,7 +136,7 @@ def home(request):
         ).annotate(
             likes_count=Count('likes', distinct=True),
             comments_count=Count('comments', filter=Q(comments__active=True), distinct=True)
-        ).order_by('-views')[:40]
+        ).order_by('-views')[:12]
         
         cache.set('landing_top_posts', list(top_posts), 1800)  # 30 минут
     
@@ -229,6 +229,56 @@ def documents(request):
         'page_description': page_description,
         'categorys': categorys,
     })
+
+
+def agreement(request):
+    categorys = cache.get('categorys_list')
+    if categorys is None:
+        categorys = Category.objects.all()
+        cache.set('categorys_list', categorys, 300)
+    page_title = 'Пользовательское соглашение - IdealImage.ru'
+    page_description = 'Пользовательское соглашение, регулирующее использование сервиса Древо Жизни на сайте IdealImage.ru'
+    return render(request, 'home/legal/agreement.html', {'page_title': page_title, 'page_description': page_description, 'categorys': categorys})
+
+
+def privacy(request):
+    categorys = cache.get('categorys_list')
+    if categorys is None:
+        categorys = Category.objects.all()
+        cache.set('categorys_list', categorys, 300)
+    page_title = 'Политика обработки персональных данных - IdealImage.ru'
+    page_description = 'Политика конфиденциальности и обработки персональных данных сайта IdealImage.ru'
+    return render(request, 'home/legal/privacy.html', {'page_title': page_title, 'page_description': page_description, 'categorys': categorys})
+
+
+def cookie_policy(request):
+    categorys = cache.get('categorys_list')
+    if categorys is None:
+        categorys = Category.objects.all()
+        cache.set('categorys_list', categorys, 300)
+    page_title = 'Политика использования cookie - IdealImage.ru'
+    page_description = 'Политика использования файлов cookie сайтом IdealImage.ru'
+    return render(request, 'home/legal/cookie_policy.html', {'page_title': page_title, 'page_description': page_description, 'categorys': categorys})
+
+
+def offer(request):
+    categorys = cache.get('categorys_list')
+    if categorys is None:
+        categorys = Category.objects.all()
+        cache.set('categorys_list', categorys, 300)
+    page_title = 'Публичная оферта - IdealImage.ru'
+    page_description = 'Официальная публичная оферта оказания услуг и использования сайта IdealImage.ru'
+    return render(request, 'home/legal/offer.html', {'page_title': page_title, 'page_description': page_description, 'categorys': categorys})
+
+
+def requisites(request):
+    categorys = cache.get('categorys_list')
+    if categorys is None:
+        categorys = Category.objects.all()
+        cache.set('categorys_list', categorys, 300)
+    page_title = 'Реквизиты и контакты - IdealImage.ru'
+    page_description = 'Юридические реквизиты, контактная информация и способы связи с администрацией IdealImage.ru'
+    return render(request, 'home/legal/requisites.html', {'page_title': page_title, 'page_description': page_description, 'categorys': categorys})
 
 
 def help_page(request):

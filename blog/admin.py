@@ -67,27 +67,28 @@ class CategoryAdmin(DraggableMPTTAdmin):
 # ДЕЙСТВИЯ (ACTIONS) ДЛЯ МАССОВОГО УПРАВЛЕНИЯ СТАТЬЯМИ
 # ============================================================================
 
+@admin.action(description="📝 Перевести в черновик")
 def ststus_change(modeladmin, request, queryset):
     """Перевести статус в черновик"""
     count = queryset.update(status='draft')
     modeladmin.message_user(request, f'Статус изменен на "Черновик" для {count} статей')
-ststus_change.short_description = "📝 Перевести в черновик"
 
 
+@admin.action(description="📌 Добавить ФИКСАЦИЮ")
 def fixed_add(modeladmin, request, queryset):
     """Добавить фиксацию"""
     count = queryset.update(fixed=True)
     modeladmin.message_user(request, f'Фиксация добавлена для {count} статей')
-fixed_add.short_description = "📌 Добавить ФИКСАЦИЮ"
 
 
+@admin.action(description="📌 Снять фиксацию")
 def fixed_remove(modeladmin, request, queryset):
     """Снять фиксацию"""
     count = queryset.update(fixed=False)
     modeladmin.message_user(request, f'Фиксация снята для {count} статей')
-fixed_remove.short_description = "📌 Снять фиксацию"
 
 
+@admin.action(description="✅ Пометить как опубликованные в Telegram")
 def telegram_mark_as_posted(modeladmin, request, queryset):
     """Пометить как опубликованные в Telegram"""
     from django.utils import timezone
@@ -98,9 +99,9 @@ def telegram_mark_as_posted(modeladmin, request, queryset):
             post.save(update_fields=['telegram_posted_at'])
             count += 1
     modeladmin.message_user(request, f'Помечено как опубликованные в Telegram: {count} статей')
-telegram_mark_as_posted.short_description = "✅ Пометить как опубликованные в Telegram"
 
 
+@admin.action(description="❌ Снять метку публикации в Telegram")
 def telegram_mark_as_not_posted(modeladmin, request, queryset):
     """Снять метку публикации в Telegram"""
     count = 0
@@ -110,7 +111,22 @@ def telegram_mark_as_not_posted(modeladmin, request, queryset):
             post.save(update_fields=['telegram_posted_at'])
             count += 1
     modeladmin.message_user(request, f'Метка публикации снята для {count} статей')
-telegram_mark_as_not_posted.short_description = "❌ Снять метку публикации в Telegram"
+
+
+@admin.action(description="🔄 Перезапустить обработку видео/фото")
+def restart_video_processing_action(modeladmin, request, queryset):
+    """Принудительно перезапустить обработку медиа/видео"""
+    from .tasks import process_media_task
+    count = 0
+    for post in queryset:
+        if post.kartinka:
+            # Сбрасываем статус, чтобы сигнал или задача не считали её готовой
+            post.video_processing_status = 'pending'
+            post.video_optimized = False
+            post.save(update_fields=['video_processing_status', 'video_optimized'])
+            process_media_task.delay(post.id)
+            count += 1
+    modeladmin.message_user(request, f'Запущена фоновая обработка для {count} медиа-файлов')
 
 # ============================================================================
 # КАСТОМНЫЕ ФИЛЬТРЫ ДЛЯ АДМИНКИ
@@ -159,7 +175,7 @@ class PostAdmin(admin.ModelAdmin):
     """    Админ-панель модели Post    """
     form = PostAdminForm
     
-    list_display = ['title', 'post_photo', 'category', 'fixed_icon', 'telegram_icon', 'moderation_icon', 'status', 'author', 'created']
+    list_display = ['title', 'post_photo', 'category', 'fixed_icon', 'video_status_icon', 'telegram_icon', 'moderation_icon', 'status', 'author', 'created']
     list_display_links = ['title', 'post_photo', 'category']
     list_filter = ['status', 'moderation_status', TelegramPostedFilter, FixedFilter, 'category', 'author', 'created']
     search_fields = ['title', 'content', 'author__username']
@@ -168,13 +184,14 @@ class PostAdmin(admin.ModelAdmin):
     # date_hierarchy = 'created'  # Временно отключено из-за MySQL timezone tables
     ordering = ['-created']  # Новые статьи сверху
     save_on_top = True
-    readonly_fields = ['post_photo', 'video_optimized', 'video_processing_status', 'video_duration']  # moderation_status и ai_moderation_notes НЕ readonly - AI Agent их заполняет!
+    readonly_fields = ['post_photo', 'video_optimized', 'video_processing_status', 'video_duration', 'video_preview_preview']
     actions = [
         ststus_change, 
         fixed_add, 
         fixed_remove, 
         telegram_mark_as_posted, 
-        telegram_mark_as_not_posted
+        telegram_mark_as_not_posted,
+        restart_video_processing_action
     ]
     
     # Настройка пагинации
@@ -208,9 +225,13 @@ class PostAdmin(admin.ModelAdmin):
             'classes': ('wide',)
         }),
         ('Медиа', {
-            'fields': ('kartinka', 'video_url', 'post_photo', 'video_poster', 'video_optimized', 'video_processing_status'),
+            'fields': (
+                'kartinka', 'video_url', 'post_photo', 
+                'video_poster', 'video_preview', 'video_preview_preview',
+                'thumbnail', 'video_optimized', 'video_processing_status', 'video_duration'
+            ),
             'classes': ('wide',),
-            'description': 'Загрузите изображение/видео или укажите ссылку на видео. Приоритет: видео > изображение. Видео автоматически оптимизируется при загрузке.'
+            'description': 'Загрузите изображение/видео или укажите ссылку на видео. Видео/фото автоматически оптимизируются при загрузке.'
         }),
         ('AI Модерация', {
             'fields': ('moderation_status', 'ai_moderation_notes'),
@@ -279,6 +300,39 @@ class PostAdmin(admin.ModelAdmin):
         return mark_safe(
             f'<span style="font-size: 16px; color: #6c757d;" title="Модерация пропущена">⊘</span>'
         )
+
+    @admin.display(description="🎬", ordering='video_processing_status')
+    def video_status_icon(self, obj):
+        """Иконка статуса обработки видео"""
+        if not obj.kartinka:
+            return "—"
+            
+        name = obj.kartinka.name.lower()
+        is_video = any(name.endswith(ext) for ext in ['.mp4', '.webm', '.mov', '.avi', '.mkv'])
+        
+        if not is_video:
+            # Для фото показываем статус на основе наличия thumbnail
+            if obj.thumbnail:
+                return mark_safe('<span style="color: #28a745;" title="Фото оптимизировано (WebP + Thumb)">🖼️✅</span>')
+            return mark_safe('<span style="color: #ffc107;" title="Фото в очереди на оптимизацию">🖼️⏳</span>')
+
+        # Статусы для видео
+        if obj.video_processing_status == 'completed':
+            return mark_safe('<span style="font-size: 18px; color: #28a745;" title="✅ Видео полностью обработано (Оптимизировано + Превью + Poster)">🎬✅</span>')
+        elif obj.video_processing_status == 'processing':
+            return mark_safe('<span style="font-size: 18px; color: #ffc107;" title="⏳ Видео в процессе обработки...">🎬⏳</span>')
+        elif obj.video_processing_status == 'failed':
+            return mark_safe('<span style="font-size: 18px; color: #dc3545;" title="❌ Ошибка при обработке видео">🎬❌</span>')
+        elif obj.video_processing_status == 'pending':
+            return mark_safe('<span style="font-size: 18px; color: #6c757d;" title="📽️ Видео ожидает обработки">🎬📽️</span>')
+        return "—"
+
+    @admin.display(description="Просмотр превью")
+    def video_preview_preview(self, obj):
+        """Отображение 5-секундного превью в админке"""
+        if obj.video_preview:
+            return mark_safe(f'<video src="{obj.video_preview.url}" width="200" autoplay loop muted playsinline></video>')
+        return "Превью не создано"
         
     #def response_change(self, request, post_obj):
     #    if post_obj.fixed == True and post_obj.status == 'draft' :

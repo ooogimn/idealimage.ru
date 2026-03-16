@@ -7,6 +7,11 @@ app_name = 'Home'
 urlpatterns = [
     path('search/', SearchPageView.as_view(), name='search_page'),
     path('documents/', documents, name='documents'),
+    path('documents/agreement/', agreement, name='agreement'),
+    path('documents/privacy/', privacy, name='privacy'),
+    path('documents/cookie/', cookie_policy, name='cookie_policy'),
+    path('documents/offer/', offer, name='offer'),
+    path('documents/requisites/', requisites, name='requisites'),
     path('help/', help_page, name='help'),
     path('advertise/', advertising, name='advertising'),  # Переименовано чтобы не конфликтовать с /advertising/ (панель управления)
     

@@ -1,4 +1,4 @@
-﻿(function () {
+(function () {
     const STORAGE_KEY = 'idealimage_cookie_consent_v1';
     const COOKIE_NAME = 'idealimage_cookie_consent';
     const COOKIE_MAX_AGE = 60 * 60 * 24 * 180; // 180 РґРЅРµР№
@@ -35,13 +35,13 @@
     };
 
     const readCookie = () => {
-        const match = document.cookie.match(new RegExp(${COOKIE_NAME}=([^;]+)));
+        const match = document.cookie.match(new RegExp(`${COOKIE_NAME}=([^;]+)`));
         if (!match) return null;
         return parseJson(decodeURIComponent(match[1]));
     };
 
     const writeCookie = (prefs) => {
-        let cookie = ${COOKIE_NAME}=; max-age=; path=/; SameSite=Lax;
+        let cookie = `${COOKIE_NAME}=${encodeURIComponent(JSON.stringify(prefs))}; max-age=${COOKIE_MAX_AGE}; path=/; SameSite=Lax`;
         if (isSecure) cookie += '; Secure';
         document.cookie = cookie;
     };
@@ -161,4 +161,12 @@
             handleDeclineOptional();
         });
     }
+
+    // Allow opening banner from external buttons
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('.open-cookie-settings') || e.target.classList.contains('open-cookie-settings')) {
+            e.preventDefault();
+            showBanner();
+        }
+    });
 })();

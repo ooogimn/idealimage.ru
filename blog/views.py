@@ -344,7 +344,7 @@ class PostCreateView(LoginRequiredMixin, CreateView):
                 # ничего не запускаем локально
                 cache.delete('authors_list')
                 return super().form_valid(form)
-            from django_q.tasks import async_task
+            from Asistent.tasks import async_task
             messages_list = []
             needs_save = False
             
@@ -484,11 +484,11 @@ class PostUpdateView(SuccessMessageMixin, UpdateView):
             task_id = getattr(self.object, 'ai_improvement_task_id', '')
             if task_id:
                 try:
-                    from django_q.models import Task  # noqa: WPS433
+                    from django_celery_results.models import TaskResult  # noqa: WPS433
                 except Exception:
-                    Task = None  # type: ignore
+                    TaskResult = None  # type: ignore
                 else:
-                    if Task.objects.filter(id=task_id).exists():
+                    if TaskResult.objects.filter(task_id=task_id).exists():
                         pending = False
 
             request_time = getattr(self.object, 'ai_improvement_requested_at', None)
@@ -540,7 +540,7 @@ class PostUpdateView(SuccessMessageMixin, UpdateView):
                 messages.warning(self.request, 'AI-режим отключён. Задачи в очередь не ставятся.')
                 cache.delete('authors_list')
                 return super().form_valid(form)
-            from django_q.tasks import async_task
+            from Asistent.tasks import async_task
             messages_list = []
             needs_save = False
             
@@ -877,7 +877,7 @@ def retry_ai_improvements(request, post_id):
     if settings.DISABLE_AI:
         messages.warning(request, '⚠️ Локальный режим: AI отключён. Задачи в очередь не ставятся.')
         return redirect('blog:post_update', slug=post.slug)
-    from django_q.tasks import async_task
+    from Asistent.tasks import async_task
     
     # ОТКЛЮЧЕНИЕ АВТОМОДЕРАЦИИ для суперюзеров и AI агентов
     is_superuser = request.user.is_superuser or request.user.is_staff
@@ -1090,7 +1090,7 @@ def request_ai_improvement(request, post_id):
     if settings.DISABLE_AI:
         messages.warning(request, '⚠️ Локальный режим: AI отключён. Задачи в очередь не ставятся.')
         return redirect('blog:post_update', slug=post.slug)
-    from django_q.tasks import async_task
+    from Asistent.tasks import async_task
     style = request.POST.get('style', 'balanced')
     
     # ОТКЛЮЧЕНИЕ АВТОМОДЕРАЦИИ для суперюзеров и AI агентов

@@ -3,6 +3,10 @@
 {% load video_tags %}
 
 {% block content %}
+<!-- Swiper.js CSS and JS -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.css" />
+<script src="https://cdn.jsdelivr.net/npm/swiper@11/swiper-bundle.min.js"></script>
+
 <!-- Hero Section -->
 <section id="hero-section" class="relative overflow-hidden min-h-[12.5vh] md:min-h-[35vh]">
     <!-- Dynamic Background -->
@@ -43,7 +47,7 @@
             Ваш путеводитель в мире красоты с AI
         </p>
         <p class="text-lg md:text-xl mb-12 opacity-80 max-w-3xl mx-auto animate-fade-in animation-delay-400">
-            Уникальный контент о моде, красоте и здоровье с модерацией и продвижением от искусственного интеллекта
+            Авторский контент о моде, красоте и стиле жизни
         </p>
         
         <div class="flex flex-col md:flex-row gap-4 justify-center animate-fade-in animation-delay-600">
@@ -112,14 +116,19 @@
                         </a>
                     {% elif post.kartinka %}
                         {% if post.kartinka.name|slice:"-4:" == ".mp4" or post.kartinka.name|slice:"-5:" == ".webm" or post.kartinka.name|slice:"-4:" == ".mov" %}
-                            <a href="{{ post.get_absolute_url }}" class="block w-full h-full">
-                                <video src="{{ post.kartinka.url }}" 
-                                       class="w-full h-full object-cover"
-                                       autoplay 
-                                       loop 
-                                       muted 
-                                       playsinline>
+                            <a href="{{ post.get_absolute_url }}" class="block w-full h-full relative group">
+                                <video src="{% if post.video_preview %}{{ post.video_preview.url }}{% else %}{{ post.kartinka.url }}{% endif %}" 
+                                       {% if post.video_poster %}poster="{{ post.video_poster.url }}"{% endif %}
+                                       class="w-full h-full object-cover transition-opacity duration-300"
+                                       autoplay loop muted playsinline>
                                 </video>
+                                {% if post.video_poster and not post.video_preview %}
+                                    <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/20 pointer-events-none">
+                                        <svg class="w-12 h-12 text-white" fill="currentColor" viewBox="0 0 20 20">
+                                            <path d="M6.3 2.841A1.5 1.5 0 004 4.11V15.89a1.5 1.5 0 002.3 1.269l9.333-5.89a1.5 1.5 0 000-2.538L6.3 2.841z"/>
+                                        </svg>
+                                    </div>
+                                {% endif %}
                             </a>
                         {% else %}
                             <a href="{{ post.get_absolute_url }}" class="block w-full h-full">
@@ -127,6 +136,8 @@
                                      alt="{{ post.title }}" 
                                      loading="lazy"
                                      decoding="async"
+                                     onerror="this.src=this.dataset.fallback;"
+                                     data-fallback="{% static 'images/default_image.jpg' %}"
                                      class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
                             </a>
                         {% endif %}
@@ -203,137 +214,6 @@
 </section>
 {% endif %}
 
-<!-- Unique Content & AI Technology Section (объединённая) -->
-<section id="features-section" class="py-4 md:py-12 relative overflow-hidden text-white min-h-[15vh] md:min-h-[45vh]">
-    {% include 'home/partials/section_background.html' with bg=sections_backgrounds.features default_gradient='from-purple-600 via-indigo-600 to-blue-600' %}
-    <div class="max-w-7xl mx-auto px-4 relative z-10">
-        <!-- Заголовок секции -->
-        {% comment %}
-        <div class="text-center mb-16">
-            <h2 class="text-4xl md:text-5xl font-heading font-bold mb-4">
-                💎 Уникальность на 100% с технологиями AI
-            </h2>
-            <p class="text-xl opacity-90 max-w-3xl mx-auto">
-                Мы используем передовые технологии искусственного интеллекта для создания уникального контента высочайшего качества
-            </p>
-        </div>
-        {% endcomment %}
-        
-        <!-- Основные преимущества уникальности -->
-        {% comment %}
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-8 mb-16">
-            <!-- Feature 1 -->
-            <div class="text-center p-8 bg-white/10 backdrop-blur-md rounded-2xl shadow-lg hover:bg-white/20 transition-all">
-                <div class="text-6xl mb-4">🤖</div>
-                <h3 class="text-2xl font-bold mb-3">
-                    AI-Модерация
-                </h3>
-                <p class="text-sm opacity-90">
-                    Каждая статья автоматически проверяется AI-ассистентом на соответствие критериям качества, уникальности и пользы для читателей
-                </p>
-            </div>
-            
-            <!-- Feature 2 -->
-            <div class="text-center p-8 bg-white/10 backdrop-blur-md rounded-2xl shadow-lg hover:bg-white/20 transition-all">
-                <div class="text-6xl mb-4">📰</div>
-                <h3 class="text-2xl font-bold mb-3">
-                    Ежедневные обновления
-                </h3>
-                <p class="text-sm opacity-90">
-                    Новые статьи от профессиональных авторов и AI-ассистента публикуются каждый день. Всегда свежий и актуальный контент
-                </p>
-            </div>
-            
-            <!-- Feature 3 -->
-            <div class="text-center p-8 bg-white/10 backdrop-blur-md rounded-2xl shadow-lg hover:bg-white/20 transition-all">
-                <div class="text-6xl mb-4">✨</div>
-                <h3 class="text-2xl font-bold mb-3">
-                    100% Уникальность
-                </h3>
-                <p class="text-sm opacity-90">
-                    Мы не публикуем копипасту! Все материалы создаются нашими авторами или генерируются AI с нуля на основе актуальных источников
-                </p>
-            </div>
-        </div>
-        {% endcomment %}
-        
-        <!-- Разделитель -->
-        {% comment %}
-        <div class="flex items-center justify-center mb-16">
-            <div class="h-px bg-white/30 flex-1 max-w-xs"></div>
-            <div class="px-6">
-                <div class="text-2xl">🚀</div>
-            </div>
-            <div class="h-px bg-white/30 flex-1 max-w-xs"></div>
-        </div>
-        {% endcomment %}
-        
-        <!-- AI Технологии и Календарь (двухколоночная структура) -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
-            <!-- Левая колонка: AI Технологии -->
-            <div>
-                <div class="text-center mb-8">
-                    <h3 class="text-3xl md:text-4xl font-heading font-bold mb-4">
-                        Технологичный сайт будущего
-                    </h3>
-                    <p class="text-lg opacity-90 max-w-2xl mx-auto">
-                        Искусственный интеллект работает для вас 24/7
-                    </p>
-                </div>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 hover:bg-white/20 transition-all">
-                        <div class="text-4xl mb-3">🧠</div>
-                        <h3 class="text-xl font-bold mb-2">AI-аналитика</h3>
-                        <p class="text-sm opacity-90">Автоматическая генерация отчётов, аналитики по продвижению и рекламе, с рекомендациями от AI</p>
-                    </div>
-                    
-                    <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 hover:bg-white/20 transition-all">
-                        <div class="text-4xl mb-3">🛡️</div>
-                        <h3 class="text-xl font-bold mb-2">AI-Умная модерация</h3>
-                        <p class="text-sm opacity-90">AI проверяет статьи и комментарии на качество, тон и соответствие правилам</p>
-                    </div>
-                    
-                    <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 hover:bg-white/20 transition-all">
-                        <div class="text-4xl mb-3">🔍</div>
-                        <h3 class="text-xl font-bold mb-2">AI-SEO оптимизация</h3>
-                        <p class="text-sm opacity-90">Автоматическая оптимизация каждой статьи для поисковых систем</p>
-                    </div>
-                    
-                    <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 hover:bg-white/20 transition-all">
-                        <div class="text-4xl mb-3">🎯</div>
-                        <h3 class="text-xl font-bold mb-2">AI-рекомендации ЧАТ-БОТ</h3>
-                        <p class="text-sm opacity-90">Персональные рекомендации статей на основе ваших интересов</p>
-                    </div>
-                </div>
-            </div>
-            
-            <!-- Правая колонка: Календарь праздников -->
-            <div class="flex flex-col">
-                <div class="text-center mb-0">
-                    <h3 class="text-3xl md:text-4xl font-heading font-bold mb-4">
-                        📅 Праздники сегодня
-                    </h3>
-                    <p class="text-lg opacity-90 mb-0">
-                        Узнайте, какие праздники отмечаются сегодня
-                    </p>
-                </div>
-                
-                <div class="bg-white/10 backdrop-blur-md rounded-2xl shadow-lg hover:bg-white/20 transition-all flex items-center justify-center overflow-hidden p-[5px] scale-[1.54] self-start translate-x-[130px] translate-y-[130px]">
-                    <!-- Informer www.calend.ru -->
-                    <img src="https://www.calend.ru/img/export/informer.png?{{ current_date }}" 
-                         alt="Информер праздники сегодня" 
-                         title="Праздники сегодня" 
-                         border="0"
-                         class="w-full h-full object-contain"
-                         loading="lazy">
-                    <!-- // Informer www.calend.ru -->
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
 <!-- Popular Categories Section -->
 <section class="py-6 md:py-16 relative overflow-hidden text-white bg-gray-50 dark:bg-gray-800 min-h-[15vh] md:min-h-[55vh]">
     {% include 'home/partials/section_background.html' with bg=sections_backgrounds.categories default_gradient='from-gray-50 to-gray-100' %}
@@ -374,12 +254,9 @@
                         {% elif post.kartinka %}
                             {% if post.kartinka.name|slice:"-4:" == ".mp4" or post.kartinka.name|slice:"-5:" == ".webm" or post.kartinka.name|slice:"-4:" == ".mov" %}
                                 <a href="{{ post.get_absolute_url }}" class="block w-full h-full">
-                                    <video src="{{ post.kartinka.url }}" 
+                                    <video src="{% if post.video_preview %}{{ post.video_preview.url }}{% else %}{{ post.kartinka.url }}{% endif %}" 
                                            class="w-full h-full object-cover"
-                                           autoplay 
-                                           loop 
-                                           muted 
-                                           playsinline>
+                                           autoplay loop muted playsinline>
                                     </video>
                                 </a>
                             {% else %}
@@ -388,6 +265,8 @@
                                          alt="{{ post.title }}" 
                                          loading="lazy"
                                          decoding="async"
+                                         onerror="this.src=this.dataset.fallback;"
+                                         data-fallback="{% static 'images/default_image.jpg' %}"
                                          class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
                                 </a>
                             {% endif %}
@@ -434,159 +313,6 @@
     </div>
 </section>
 
-<!-- Become a Blogger Section -->
-<section id="blogger-section" class="py-2 md:py-6 relative overflow-hidden text-white bg-white dark:bg-gray-900 min-h-[7.5vh] md:min-h-[22.5vh]">
-    {% include 'home/partials/section_background.html' with bg=sections_backgrounds.blogger default_gradient='from-white to-gray-50' %}
-    <div class="max-w-7xl mx-auto px-4 relative z-10">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
-            <div>
-                <h2 class="text-4xl md:text-5xl font-heading font-bold text-white mb-3">
-                    ✍️ Станьте блогером с AI-помощником
-                </h2>
-                <p class="text-xl text-white/90 mb-4">
-                    Пишите статьи, развивайте аудиторию и зарабатывайте деньги под руководством AI-ассистента
-                </p>
-                
-                <div class="space-y-3">
-                    <!-- Benefit 1 -->
-                    <div class="flex items-start">
-                        <div class="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-primary to-secondary rounded-lg flex items-center justify-center text-white text-2xl mr-4">
-                            🤖
-                        </div>
-                        <div>
-                            <h3 class="text-lg font-bold text-white mb-1">AI улучшит ваши тексты</h3>
-                            <p class="text-white/80">Напишите черновик → AI улучшит стиль, грамматику и SEO → Публикуйте</p>
-                        </div>
-                    </div>
-                    
-                    <!-- Benefit 2 -->
-                    <div class="flex items-start">
-                        <div class="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-green-400 to-emerald-500 rounded-lg flex items-center justify-center text-white text-2xl mr-4">
-                            💰
-                        </div>
-                        <div>
-                            <h3 class="text-lg font-bold text-white mb-1">Зарабатывайте на контенте</h3>
-                            <p class="text-white/80">Получайте премии за просмотры, лайки и комментарии. Донаты от читателей идут напрямую вам</p>
-                        </div>
-                    </div>
-                    
-                    <!-- Benefit 3 -->
-                    <div class="flex items-start">
-                        <div class="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-blue-400 to-cyan-500 rounded-lg flex items-center justify-center text-white text-2xl mr-4">
-                            📊
-                        </div>
-                        <div>
-                            <h3 class="text-lg font-bold text-white mb-1">Детальная статистика</h3>
-                            <p class="text-white/80">Отслеживайте просмотры, вовлечённость, доходы и рост аудитории в реальном времени</p>
-                        </div>
-                    </div>
-                    
-                    <!-- Benefit 4 -->
-                    <div class="flex items-start">
-                        <div class="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-purple-400 to-pink-500 rounded-lg flex items-center justify-center text-white text-2xl mr-4">
-                            🎓
-                        </div>
-                        <div>
-                            <h3 class="text-lg font-bold text-white mb-1">Обучение от AI</h3>
-                            <p class="text-white/80">AI анализирует лучшие статьи сайта и учит вас писать в успешных стилях</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="mt-5">
-                    <a href="{% url 'Visitor:apply_role' %}" 
-                       class="inline-flex items-center px-8 py-4 bg-gradient-to-r from-primary to-secondary text-white font-bold text-xl rounded-lg shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all">
-                        Подать заявку на роль автора
-                        <svg class="w-6 h-6 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"></path>
-                        </svg>
-                    </a>
-                </div>
-            </div>
-            
-            <!-- Earning Calculator -->
-            <div class="bg-gradient-to-br from-yellow-50 to-orange-50 dark:from-yellow-900/20 dark:to-orange-900/20 rounded-2xl shadow-2xl p-3">
-                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2 text-center">
-                    💰 Калькулятор дохода автора
-                </h3>
-                
-                <div class="space-y-1.5 mb-2">
-                    <!-- Статей за месяц -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-900 dark:text-gray-300 mb-1.5">
-                            📝 Статей в месяц
-                        </label>
-                        <input type="number" id="calc-posts" value="100" min="1" max="1000"
-                               class="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg text-center text-lg font-bold"
-                               oninput="calculateEarnings()">
-                    </div>
-                    
-                    <!-- Просмотры на статью -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-900 dark:text-gray-300 mb-1.5">
-                            👁️ Просмотров на статью
-                        </label>
-                        <input type="number" id="calc-views" value="500" min="0" max="100000" step="100"
-                               class="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg text-center text-lg font-bold"
-                               oninput="calculateEarnings()">
-                    </div>
-                    
-                    <!-- Лайки на статью -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-900 dark:text-gray-300 mb-1.5">
-                            ❤️ Лайков на статью
-                        </label>
-                        <input type="number" id="calc-likes" value="500" min="0" max="50000" step="10"
-                               class="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg text-center text-lg font-bold"
-                               oninput="calculateEarnings()">
-                    </div>
-                    
-                    <!-- Комментарии на статью -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-900 dark:text-gray-300 mb-1.5">
-                            💬 Комментариев на статью
-                        </label>
-                        <input type="number" id="calc-comments" value="300" min="0" max="50000" step="10"
-                               class="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg text-center text-lg font-bold"
-                               oninput="calculateEarnings()">
-                    </div>
-                    
-                    <!-- Уровень автора -->
-                    <div>
-                        <label class="block text-sm font-medium text-gray-900 dark:text-gray-300 mb-1.5">
-                            🏆 Уровень автора
-                        </label>
-                        <select id="calc-level" 
-                                class="w-full px-3 py-2 border-2 border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg text-center text-base font-bold"
-                                onchange="calculateEarnings()">
-                            <option value="0.1">🌱 Стажёр (1 балл = 0,1₽)</option>
-                            <option value="0.3" selected>✍️ Автор (1 балл = 0,3₽)</option>
-                            <option value="0.7">📚 Писатель (1 балл = 0,7₽)</option>
-                            <option value="1">🏆 Бестселлер (1 балл = 1₽)</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <!-- Результат -->
-                <div class="bg-gradient-to-r from-green-500 to-emerald-600 rounded-xl p-2 text-white text-center mb-2">
-                    <p class="text-sm opacity-90 mb-1.5">Ваш потенциальный доход</p>
-                    <p class="text-4xl font-bold" id="earnings-result">108 000₽</p>
-                    <p class="text-sm opacity-75 mt-1.5">в месяц (премии + донаты от читателей)</p>
-                </div>
-                
-                <!-- Формула -->
-                <div class="p-1.5 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <p class="text-sm text-blue-900 dark:text-blue-300 leading-relaxed">
-                        💡 <strong>Формула расчёта:</strong> 1 статья = 100 баллов + 1 просмотр = 1 балл + 1 лайк = 3 балла + 1 комментарий = 5 баллов.<br>
-                        <strong>Конвертация:</strong> Стажёр (1 балл = 0,1₽) • Автор (1 балл = 0,3₽) • Писатель (1 балл = 0,7₽) • Бестселлер (1 балл = 1₽)<br>
-                        <span class="text-xs opacity-75">Премии + донаты от читателей!</span>
-                    </p>
-                </div>
-            </div>
-        </div>
-    </div>
-</section>
-
 <!-- 🏆 Топ популярных статей -->
 <section class="py-6 md:py-16 relative overflow-hidden text-white bg-white dark:bg-gray-900 min-h-[15vh] md:min-h-[55vh]">
     {% include 'home/partials/section_background.html' with bg=sections_backgrounds.top_posts default_gradient='from-white to-gray-50' %}
@@ -597,113 +323,92 @@
             </h2>
         </div>
         
-        <!-- Carousel Container -->
-        <div class="relative">
-            <!-- Carousel Track -->
-            <div class="overflow-hidden">
-                <div id="top-posts-carousel" class="flex transition-transform duration-500 ease-in-out">
-                    {% for post in top_posts %}
-                    <div class="flex-shrink-0 px-2 carousel-slide">
-                        <article class="bg-white dark:bg-gray-900 rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-all transform hover:scale-105 group">
-                            <!-- Image/Video -->
-                            <div class="relative h-36 flex-shrink-0 overflow-hidden">
-                                {% if post.video_url|is_video %}
-                                    <a href="{{ post.get_absolute_url }}" class="block w-full h-full">
-                                        <iframe src="{{ post.video_url|video_embed }}" 
-                                                class="w-full h-full"
-                                                frameborder="0" 
-                                                allow="autoplay; encrypted-media" 
-                                                allowfullscreen
-                                                loading="lazy"
-                                                onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-                                        </iframe>
-                                        <div style="display:none;" class="w-full h-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-2xl">
-                                            ⚠️
-                                        </div>
-                                    </a>
-                                {% elif post.kartinka %}
+        <!-- Swiper Carousel Container -->
+        <div class="swiper top-posts-swiper !pb-12 !px-4">
+            <div class="swiper-wrapper">
+                {% for post in top_posts %}
+                <div class="swiper-slide !h-auto">
+                    <article class="bg-white/80 dark:bg-gray-900/80 backdrop-blur-md rounded-2xl shadow-lg border border-white/20 dark:border-gray-700/30 overflow-hidden hover:shadow-2xl transition-all duration-300 group h-full flex flex-col">
+                        <!-- Image/Video Section -->
+                        <div class="relative aspect-video overflow-hidden">
+                            {% if post.video_url|is_video %}
+                                <a href="{{ post.get_absolute_url }}" class="block w-full h-full">
+                                    <iframe src="{{ post.video_url|video_embed }}" 
+                                            class="w-full h-full"
+                                            frameborder="0" 
+                                            allow="autoplay; encrypted-media" 
+                                            allowfullscreen
+                                            loading="lazy">
+                                    </iframe>
+                                </a>
+                            {% elif post.kartinka %}
+                                <a href="{{ post.get_absolute_url }}" class="block w-full h-full relative">
                                     {% if post.kartinka.name|slice:"-4:" == ".mp4" or post.kartinka.name|slice:"-5:" == ".webm" or post.kartinka.name|slice:"-4:" == ".mov" %}
-                                        <a href="{{ post.get_absolute_url }}" class="block w-full h-full">
-                                            <video src="{{ post.kartinka.url }}" 
-                                                   class="w-full h-full object-cover"
-                                                   autoplay 
-                                                   loop 
-                                                   muted 
-                                                   playsinline>
-                                            </video>
-                                        </a>
-                                {% else %}
-                                    <a href="{{ post.get_absolute_url }}" class="block w-full h-full">
+                                        <video src="{% if post.video_preview %}{{ post.video_preview.url }}{% else %}{{ post.kartinka.url }}{% endif %}" 
+                                               {% if post.video_poster %}poster="{{ post.video_poster.url }}"{% endif %}
+                                               class="w-full h-full object-cover"
+                                               autoplay loop muted playsinline>
+                                        </video>
+                                    {% else %}
                                         <img src="{% if post.thumbnail %}{{ post.thumbnail.url }}{% else %}{{ post.kartinka.url }}{% endif %}" 
                                              alt="{{ post.title }}" 
                                              loading="lazy"
                                              decoding="async"
+                                             onerror="this.src=this.dataset.fallback;"
+                                             data-fallback="{% static 'images/default_image.jpg' %}"
                                              class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
-                                    </a>
-                                {% endif %}
-                                {% else %}
-                                <a href="{{ post.get_absolute_url }}" class="block w-full h-full">
-                                    <div class="w-full h-full bg-gradient-to-br from-primary to-secondary flex items-center justify-center text-white text-2xl">
-                                        ✨
-                                    </div>
+                                    {% endif %}
+                                    <div class="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent"></div>
                                 </a>
-                                {% endif %}
-                            </div>
+                            {% else %}
+                                <a href="{{ post.get_absolute_url }}" class="block w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/20 to-secondary/20">
+                                    <span class="text-4xl">✨</span>
+                                </a>
+                            {% endif %}
                             
-                            <!-- Content -->
-                            <div class="p-3 flex-1 flex flex-col justify-between">
-                                <div>
-                                    <h3 class="text-sm font-bold text-gray-900 dark:text-white mb-2 line-clamp-3 group-hover:text-primary transition-colors carousel-title">
-                                        {{ post.title }}
-                                    </h3>
-                                    
-                                    <div class="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 mb-2">
-                                        <span class="flex items-center gap-1">
-                                            👁️ {{ post.views }}
-                                        </span>
-                                        <span class="flex items-center gap-1">
-                                            ❤️ {{ post.likes_count|default:0 }}
-                                        </span>
-                                    </div>
+                            <!-- Badges -->
+                            <div class="absolute top-2 left-2">
+                                <span class="px-2 py-0.5 bg-primary/90 text-white text-[10px] font-bold rounded-full">
+                                    {{ post.category.title }}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <!-- Content Section -->
+                        <div class="p-4 flex-1 flex flex-col">
+                            <h3 class="text-base font-bold text-gray-900 dark:text-white mb-2 line-clamp-2 group-hover:text-primary transition-colors leading-snug h-10">
+                                {{ post.title }}
+                            </h3>
+                            
+                            <div class="mt-auto flex items-center justify-between">
+                                <div class="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
+                                    <span class="flex items-center gap-1">
+                                        👁️ {{ post.views }}
+                                    </span>
+                                    <span class="flex items-center gap-1">
+                                        ❤️ {{ post.likes_count|default:0 }}
+                                    </span>
                                 </div>
-                                
                                 <a href="{{ post.get_absolute_url }}" 
-                                   class="inline-flex items-center text-xs text-primary hover:text-secondary font-semibold">
+                                   class="text-xs font-bold text-primary hover:text-secondary flex items-center gap-1 transition-colors">
                                     Читать
-                                    <svg class="w-3 h-3 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                                    <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7l5 5m0 0l-5 5m5-5H6"></path>
                                     </svg>
                                 </a>
                             </div>
-                        </article>
-                    </div>
-                    {% endfor %}
+                        </div>
+                    </article>
                 </div>
+                {% endfor %}
             </div>
             
-            <!-- Navigation Buttons -->
-            <button id="carousel-prev" 
-                    class="absolute left-0 top-1/2 -translate-y-1/2 -translate-x-4 bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-4 rounded-full shadow-xl hover:shadow-2xl transition-all hover:scale-110 z-20">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M15 19l-7-7 7-7"></path>
-                </svg>
-            </button>
-            <button id="carousel-next" 
-                    class="absolute right-0 top-1/2 -translate-y-1/2 translate-x-4 bg-white dark:bg-gray-800 text-gray-900 dark:text-white p-4 rounded-full shadow-xl hover:shadow-2xl transition-all hover:scale-110 z-20">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M9 5l7 7-7 7"></path>
-                </svg>
-            </button>
-        </div>
-        
-        <!-- Carousel Indicators & Counter -->
-        <div class="flex flex-col items-center gap-4 mt-8">
-            <div id="carousel-indicators" class="flex justify-center gap-2">
-                <!-- Indicators will be generated by JS -->
-            </div>
-            <div id="carousel-counter" class="text-sm font-medium text-white/80">
-                <!-- Counter will be generated by JS -->
-            </div>
+            <!-- Swiper Navigation -->
+            <div class="swiper-button-next !text-primary !w-12 !h-12 !bg-white/80 dark:!bg-gray-800/80 !backdrop-blur-md !rounded-full !shadow-xl after:!text-xl hover:!scale-110 transition-transform"></div>
+            <div class="swiper-button-prev !text-primary !w-12 !h-12 !bg-white/80 dark:!bg-gray-800/80 !backdrop-blur-md !rounded-full !shadow-xl after:!text-xl hover:!scale-110 transition-transform"></div>
+            
+            <!-- Swiper Pagination -->
+            <div class="swiper-pagination !-bottom-2"></div>
         </div>
         
         <div class="text-center mt-12">
@@ -718,43 +423,57 @@
     </div>
 </section>
 
-<!-- 💣 Реклама на нашем сайте  -->
-<section class="py-6 md:py-16 relative overflow-hidden text-white min-h-[15vh] md:min-h-[55vh]">
-    {% include 'home/partials/section_background.html' with bg=sections_backgrounds.advertising default_gradient='from-orange-500 via-red-500 to-pink-600' %}
+<!-- Секция Контакты -->
+<section id="contacts-section" class="py-6 md:py-16 relative overflow-hidden text-white min-h-[15vh] md:min-h-[55vh]">
+    <div class="absolute inset-0 bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 opacity-90">
+        <div class="absolute inset-0" style="background-image: radial-gradient(circle, rgba(255,255,255,0.1) 1px, transparent 1px); background-size: 50px 50px;"></div>
+    </div>
     <div class="max-w-7xl mx-auto px-4 relative z-10">
         <div class="text-center mb-16">
-            <p class="text-xl opacity-90 max-w-3xl mx-auto">
-                Размещение и Распределение Рекламы на сайте с помощью Искусственного Интеллекта для максимальной эффективности
+            <h2 class="text-4xl md:text-5xl font-heading font-bold text-white mb-4">
+                Сотрудничество и реклама
+            </h2>
+            <p class="text-xl text-white/90 max-w-3xl mx-auto">
+                Мы открыты для новых проектов, партнерства и ответим на любые вопросы по размещению рекламы
             </p>
         </div>
         
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 text-center">
-                <div class="text-5xl font-bold mb-2">85%</div>
-                <p class="text-sm opacity-90">Женская аудитория 18-45</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mb-12">
+            <!-- Email -->
+            <div class="bg-white/10 backdrop-blur-md rounded-2xl p-8 hover:bg-white/20 transition-all flex flex-col items-center text-center">
+                <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-6">
+                    <span class="text-3xl">📧</span>
+                </div>
+                <h3 class="text-2xl font-bold mb-3">Email</h3>
+                <p class="text-white/80 mb-4 flex-1">Для официальных запросов, предложений и сотрудничества</p>
+                <a href="mailto:info@idealimage.ru" class="text-lg font-semibold hover:text-white transition-colors border-b border-transparent hover:border-white">
+                    info@idealimage.ru
+                </a>
             </div>
-            <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 text-center">
-                <div class="text-5xl font-bold mb-2">50K+</div>
-                <p class="text-sm opacity-90">Посетителей в месяц</p>
+            
+            <!-- Telegram -->
+            <div class="bg-white/10 backdrop-blur-md rounded-2xl p-8 hover:bg-white/20 transition-all flex flex-col items-center text-center">
+                <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-6">
+                    <span class="text-3xl">📱</span>
+                </div>
+                <h3 class="text-2xl font-bold mb-3">Telegram</h3>
+                <p class="text-white/80 mb-4 flex-1">Для быстрой связи, обсуждения размещения рекламы</p>
+                <a href="https://t.me/idealimage_admin" target="_blank" rel="noopener noreferrer" class="text-lg font-semibold hover:text-white transition-colors border-b border-transparent hover:border-white">
+                    @idealimage_admin
+                </a>
             </div>
-            <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 text-center">
-                <div class="text-5xl font-bold mb-2">AI</div>
-                <p class="text-sm opacity-90">Таргетинг по интересам</p>
+            
+            <!-- Форма или Рекламодателям -->
+            <div class="bg-white/10 backdrop-blur-md rounded-2xl p-8 hover:bg-white/20 transition-all flex flex-col items-center text-center">
+                <div class="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center mb-6">
+                    <span class="text-3xl">💡</span>
+                </div>
+                <h3 class="text-2xl font-bold mb-3">Рекламодателям</h3>
+                <p class="text-white/80 mb-4 flex-1">Ознакомьтесь с условиями размещения рекламы на нашем сайте</p>
+                <a href="{% url 'Home:advertising' %}" class="inline-flex items-center px-6 py-3 bg-white text-primary font-bold rounded-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all">
+                    Условия рекламы
+                </a>
             </div>
-            <div class="bg-white/10 backdrop-blur-md rounded-xl p-6 text-center">
-                <div class="text-5xl font-bold mb-2">24/7</div>
-                <p class="text-sm opacity-90">Мониторинг эффективности</p>
-            </div>
-        </div>
-        
-        <div class="text-center mt-12">
-            <a href="{% url 'Home:advertising' %}" 
-               class="inline-flex items-center px-8 py-4 bg-white text-primary font-bold text-xl rounded-lg shadow-2xl hover:shadow-3xl transform hover:scale-105 transition-all">
-                Разместить рекламу
-                <svg class="w-6 h-6 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
-                </svg>
-            </a>
         </div>
     </div>
 </section>
@@ -774,50 +493,62 @@
         </div>
         
         {% if portals %}
-        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
             {% for portal in portals %}
-            <div class="group relative bg-white dark:bg-gray-900 rounded-2xl overflow-hidden shadow-lg hover:shadow-2xl transition-all transform hover:scale-105 {% if portal.is_main %}border-4 border-primary{% else %}border-2 border-gray-200 dark:border-gray-700{% endif %}">
-                <!-- Portal Image -->
-                <div class="relative h-48 overflow-hidden">
+            <div class="group relative bg-white dark:bg-gray-900 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-2 {% if portal.is_main %}ring-4 ring-primary ring-offset-4 dark:ring-offset-gray-900{% else %}border border-gray-100 dark:border-gray-800{% endif %}">
+                <!-- Portal Image & Identity -->
+                <div class="relative aspect-[4/3] overflow-hidden bg-gray-100 dark:bg-gray-800">
                     {% if portal.image %}
                     <img src="{{ portal.image.url }}" 
                          alt="{{ portal.name }}" 
                          loading="lazy"
-                         class="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500">
-                    {% else %}
-                    <!-- Fallback gradient if no image -->
-                    <div class="w-full h-full bg-gradient-to-br {% if portal.is_main %}from-pink-500 via-purple-500 to-indigo-600{% else %}from-gray-400 to-gray-600{% endif %} flex items-center justify-center">
-                        <span class="text-white text-6xl">{{ portal.get_icon }}</span>
-                    </div>
+                         decoding="async"
+                         class="w-full h-full object-cover filter brightness-90 contrast-110 group-hover:brightness-100 group-hover:scale-110 transition-all duration-500">
                     {% endif %}
                     
-                    <!-- Overlay with Portal Name -->
-                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent flex flex-col justify-end p-4">
-                        <h3 class="text-xl font-bold text-white mb-1">
-                            {{ portal.name }}
-                        </h3>
+                    <!-- Gradient Overlay (Cohesive Look) -->
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-300"></div>
+                    
+                    <!-- Portal Icon & Name on Image -->
+                    <div class="absolute inset-0 flex flex-col justify-end p-5">
+                        <div class="flex items-center gap-3 mb-2">
+                            <span class="text-3xl drop-shadow-lg transform group-hover:scale-125 transition-transform duration-300">
+                                {{ portal.get_icon|default:"🌐" }}
+                            </span>
+                            <h3 class="text-xl font-bold text-white drop-shadow-md">
+                                {{ portal.name }}
+                            </h3>
+                        </div>
+                        
                         {% if portal.is_main %}
-                        <span class="inline-flex items-center px-3 py-1 bg-primary text-white rounded-full text-xs font-bold w-fit">
-                            👑 Главный портал
-                        </span>
+                        <div class="flex">
+                            <span class="px-3 py-1 bg-primary/90 backdrop-blur-sm text-white text-[10px] font-black uppercase tracking-wider rounded-full shadow-lg">
+                                👑 Наш флагман
+                            </span>
+                        </div>
                         {% endif %}
                     </div>
                 </div>
                 
-                <!-- Portal Content -->
-                <div class="p-4">
-                    <p class="text-sm text-gray-700 dark:text-gray-300 mb-4 line-clamp-2">
+                <!-- Portal Description -->
+                <div class="p-5 flex flex-col flex-grow bg-white dark:bg-gray-900">
+                    <p class="text-sm text-gray-600 dark:text-gray-400 mb-6 line-clamp-3 leading-relaxed">
                         {{ portal.description }}
                     </p>
                     
                     <a href="{{ portal.url }}" 
                        target="_blank"
                        rel="noopener noreferrer"
-                       class="inline-flex items-center justify-center w-full px-4 py-2 bg-gradient-to-r from-primary to-secondary text-white font-semibold rounded-lg hover:shadow-lg transform hover:scale-105 transition-all">
-                        Перейти
-                        <svg class="w-4 h-4 ml-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                        </svg>
+                       class="mt-auto group/btn relative inline-flex items-center justify-center w-full px-6 py-3 bg-primary text-white font-bold rounded-xl hover:bg-secondary hover:shadow-xl transform hover:-translate-y-1 transition-all duration-300 overflow-hidden shadow-lg border border-primary/20">
+                        <span class="relative z-10 flex items-center gap-2">
+                            Перейти на сайт
+                            <svg class="w-5 h-5 transform group-hover/btn:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path>
+                            </svg>
+                        </span>
+                        
+                        <!-- Shine effect -->
+                        <div class="absolute inset-0 w-full h-full bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-shimmer"></div>
                     </a>
                 </div>
             </div>
@@ -958,103 +689,49 @@
     will-change: transform;
 }
 
-/* Фиксированная высота и ширина для всех карточек */
-.carousel-slide {
-    width: 200px !important; /* Фиксированная ширина */
-    min-width: 200px !important;
-    max-width: 200px !important;
+/* Swiper Customization */
+.top-posts-swiper {
+    padding: 2rem 1rem !important;
 }
 
-.carousel-slide article {
-    height: 280px;
-    width: 100%;
-    display: flex;
-    flex-direction: column;
+.top-posts-swiper .swiper-slide {
+    height: auto;
 }
 
-.carousel-slide article .relative {
-    flex-shrink: 0;
+.top-posts-swiper .swiper-button-next,
+.top-posts-swiper .swiper-button-prev {
+    transition: all 0.3s ease;
 }
 
-.carousel-slide article > div:last-child {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
+.top-posts-swiper .swiper-pagination-bullet-active {
+    background: #EC4899 !important; /* primary */
 }
 
-/* Адаптивная высота на мобильных */
-@media (max-width: 767px) {
-    .carousel-slide {
-        width: 180px !important;
-        min-width: 180px !important;
-        max-width: 180px !important;
-    }
-    
-    .carousel-slide article {
-        height: 300px; /* Чуть больше на мобильных */
+@media (max-width: 768px) {
+    .top-posts-swiper .swiper-button-next,
+    .top-posts-swiper .swiper-button-prev {
+        display: none !important;
     }
 }
 
-/* line-clamp для заголовков */
+@keyframes shimmer {
+    100% {
+        transform: translateX(100%);
+    }
+}
+
+.animate-shimmer {
+    animation: shimmer 2s infinite;
+}
+
 .line-clamp-3 {
     display: -webkit-box;
     -webkit-line-clamp: 3;
     -webkit-box-orient: vertical;
     overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.carousel-title {
-    min-height: 3.6em; /* Фиксированная высота для выравнивания */
-    max-height: 3.6em;
-}
-
-/* Дополнительные стили для мобильных */
-@media (max-width: 767px) {
-    /* Скрываем кнопки на мобильных */
-    #carousel-prev,
-    #carousel-next {
-        display: none;
-    }
-    
-    /* Делаем индикаторы меньше */
-    #carousel-indicators button {
-        transform: scale(0.8);
-    }
-    
-    /* Уменьшаем счётчик */
-    #carousel-counter {
-        font-size: 0.75rem;
-    }
-}
-
-/* Кнопки навигации */
-#carousel-prev,
-#carousel-next {
-    transition: all 0.3s ease;
-}
-
-#carousel-prev:hover,
-#carousel-next:hover {
-    transform: translateY(-50%) scale(1.1);
-}
-
-/* Улучшенная видимость кнопок на темном фоне */
-@media (min-width: 768px) {
-    #carousel-prev,
-    #carousel-next {
-        opacity: 0.8;
-    }
-    
-    #carousel-prev:hover,
-    #carousel-next:hover {
-        opacity: 1;
-    }
 }
 </style>
 
-<!-- Earnings Calculator Script -->
 <script>
 function calculateEarnings() {
     // Получаем значения из полей
@@ -1089,341 +766,88 @@ function calculateEarnings() {
     document.getElementById('earnings-result').textContent = earnings.toLocaleString('ru-RU') + '₽';
 }
 
-// Auto-play background videos
+// Auto-play background videos (IntersectionObserver)
 function initBackgroundVideos() {
     const videos = document.querySelectorAll('video[autoplay]');
     
-    videos.forEach(video => {
-        // Принудительно запускаем видео
-        video.play().catch(error => {
-            console.log('Автопроигрывание видео заблокировано браузером:', error);
-            
-            // Пробуем запустить при взаимодействии пользователя
-            document.addEventListener('click', function playOnInteraction() {
-                video.play().catch(err => console.log('Не удалось запустить видео:', err));
-                document.removeEventListener('click', playOnInteraction);
-            }, { once: true });
-            
-            // Также пробуем при скролле
-            document.addEventListener('scroll', function playOnScroll() {
-                video.play().catch(err => console.log('Не удалось запустить видео:', err));
-                document.removeEventListener('scroll', playOnScroll);
-            }, { once: true });
-        });
-        
-        // Убеждаемся, что видео зациклено
-        video.addEventListener('ended', function() {
-            this.currentTime = 0;
-            this.play();
-        });
-    });
-}
-
-// Top Posts Carousel - Непрерывная карусель
-class TopPostsCarousel {
-    constructor() {
-        this.carousel = document.getElementById('top-posts-carousel');
-        if (!this.carousel) return;
-        
-        this.prevBtn = document.getElementById('carousel-prev');
-        this.nextBtn = document.getElementById('carousel-next');
-        this.indicatorsContainer = document.getElementById('carousel-indicators');
-        
-        this.originalSlides = Array.from(this.carousel.children);
-        this.totalSlides = this.originalSlides.length;
-        this.currentIndex = 0;
-        this.isTransitioning = false;
-        
-        this.init();
-    }
-    
-    getCardWidth() {
-        // Фиксированная ширина карточки
-        return window.innerWidth < 768 ? 180 : 200;
-    }
-    
-    getSlidesPerView() {
-        // При фиксированной ширине рассчитываем сколько влезает на экран
-        const containerWidth = this.carousel.parentElement.offsetWidth;
-        const cardWidth = this.getCardWidth();
-        const count = Math.floor(containerWidth / cardWidth);
-        
-        console.log(`📱 Контейнер: ${containerWidth}px, Карточка: ${cardWidth}px → ${count} статей`);
-        return Math.max(1, count); // Минимум 1
-    }
-    
-    init() {
-        this.slidesPerView = this.getSlidesPerView();
-        
-        // Клонируем слайды для бесшовной прокрутки
-        this.cloneSlides();
-        this.createIndicators();
-        this.updateCarousel(false);
-        
-        // Event listeners для кнопок
-        if (this.prevBtn) {
-            this.prevBtn.addEventListener('click', () => {
-                this.stopAutoplay();
-                this.prev();
-                this.startAutoplay();
-            });
-        }
-        
-        if (this.nextBtn) {
-            this.nextBtn.addEventListener('click', () => {
-                this.stopAutoplay();
-                this.next();
-                this.startAutoplay();
-            });
-        }
-        
-        // Остановка при наведении на контейнер
-        this.carousel.addEventListener('mouseenter', () => {
-            this.stopAutoplay();
-        });
-        
-        this.carousel.addEventListener('mouseleave', () => {
-            this.startAutoplay();
-        });
-        
-        // Обработка окончания transition
-        this.carousel.addEventListener('transitionend', (e) => {
-            // Проверяем что это именно transform transition
-            if (e.propertyName === 'transform') {
-                this.isTransitioning = false;
-                
-                // Бесшовный переход
-                if (this.currentIndex >= this.totalSlides) {
-                    this.currentIndex = 0;
-                    this.updateCarousel(false);
-                } else if (this.currentIndex < 0) {
-                    this.currentIndex = this.totalSlides - 1;
-                    this.updateCarousel(false);
-                }
-            }
-        });
-        
-        // Страховка: если transition не сработал, разблокируем через 500ms
-        setInterval(() => {
-            if (this.isTransitioning) {
-                this.isTransitioning = false;
-            }
-        }, 500);
-        
-        // Пересчет при изменении размера окна
-        let resizeTimer;
-        window.addEventListener('resize', () => {
-            clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => {
-                const oldSlidesPerView = this.slidesPerView;
-                this.slidesPerView = this.getSlidesPerView();
-                
-                if (oldSlidesPerView !== this.slidesPerView) {
-                    this.stopAutoplay();
-                    // Пересоздаём карусель при изменении количества слайдов
-                    this.carousel.innerHTML = '';
-                    this.originalSlides.forEach(slide => {
-                        this.carousel.appendChild(slide.cloneNode(true));
-                    });
-                    this.originalSlides = Array.from(this.carousel.children);
-                    this.totalSlides = this.originalSlides.length;
-                    this.currentIndex = 0;
-                    this.cloneSlides();
-                    this.createIndicators();
-                    this.updateCarousel(false);
-                    this.startAutoplay();
-                }
-            }, 250);
-        });
-        
-        // Свайпы на мобильных
-        this.initTouchEvents();
-        
-        // ВАЖНО: Запускаем автопрокрутку после полной инициализации
-        setTimeout(() => {
-            this.startAutoplay();
-            console.log('✅ Карусель полностью инициализирована');
-            console.log(`📊 Показывается ${this.slidesPerView} статей из ${this.totalSlides} общих`);
-        }, 100);
-    }
-    
-    cloneSlides() {
-        // Клонируем слайды для бесшовной прокрутки
-        const cloneCount = Math.max(10, this.slidesPerView); // Клонируем больше для плавности
-        
-        // Клонируем последние слайды в начало
-        for (let i = this.totalSlides - cloneCount; i < this.totalSlides; i++) {
-            const clone = this.originalSlides[i].cloneNode(true);
-            this.carousel.insertBefore(clone, this.carousel.firstChild);
-        }
-        
-        // Клонируем первые слайды в конец
-        for (let i = 0; i < cloneCount; i++) {
-            const clone = this.originalSlides[i].cloneNode(true);
-            this.carousel.appendChild(clone);
-        }
-        
-        // Устанавливаем начальную позицию в пикселях (пропускаем клонированные)
-        this.currentIndex = 0;
-        const cardWidth = this.getCardWidth();
-        this.carousel.style.transform = `translateX(-${cloneCount * cardWidth}px)`;
-        this.cloneCount = cloneCount;
-    }
-    
-    startAutoplay() {
-        this.stopAutoplay();
-        // Максимально непрерывная прокрутка - каждую 1 секунду
-        this.autoplay = setInterval(() => {
-            if (!this.isTransitioning) {
-                this.next();
-            }
-        }, 1000); // Максимально быстрая непрерывная прокрутка
-        console.log('🔄 Автопрокрутка активна (непрерывная, без задержек)');
-    }
-    
-    stopAutoplay() {
-        if (this.autoplay) {
-            clearInterval(this.autoplay);
-            this.autoplay = null;
-            console.log('⏸️ Автопрокрутка остановлена');
-        }
-    }
-    
-    createIndicators() {
-        if (!this.indicatorsContainer) return;
-        
-        this.indicatorsContainer.innerHTML = '';
-        // Создаём индикаторы только для оригинальных слайдов
-        const totalPages = Math.ceil(this.totalSlides / this.slidesPerView);
-        for (let i = 0; i < totalPages; i++) {
-            const indicator = document.createElement('button');
-            indicator.className = `h-3 rounded-full transition-all ${
-                i === this.currentIndex 
-                    ? 'w-8 bg-primary' 
-                    : 'w-3 bg-gray-300 dark:bg-gray-600 hover:bg-primary/50'
-            }`;
-            indicator.addEventListener('click', () => this.goToSlide(i));
-            this.indicatorsContainer.appendChild(indicator);
-        }
-    }
-    
-    updateCarousel(animate = true) {
-        if (animate) {
-            // Быстрый плавный переход за 0.4 секунды для максимальной непрерывности
-            this.carousel.style.transition = 'transform 0.4s linear';
-        } else {
-            this.carousel.style.transition = 'none';
-        }
-        
-        // Рассчитываем смещение в пикселях (фиксированная ширина карточек)
-        const cardWidth = this.getCardWidth();
-        const offset = -(this.currentIndex + this.cloneCount) * cardWidth;
-        this.carousel.style.transform = `translateX(${offset}px)`;
-        
-        // Обновление индикаторов
-        const indicators = this.indicatorsContainer?.children;
-        if (indicators) {
-            // Нормализуем индекс для индикаторов
-            const normalizedIndex = ((this.currentIndex % this.totalSlides) + this.totalSlides) % this.totalSlides;
-            const currentPage = Math.floor(normalizedIndex / this.slidesPerView);
-            
-            Array.from(indicators).forEach((indicator, index) => {
-                if (index === currentPage) {
-                    indicator.className = 'h-3 w-8 bg-primary rounded-full transition-all';
+    if ('IntersectionObserver' in window) {
+        const videoObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.play().catch(e => console.log('Autoplay prevented:', e));
                 } else {
-                    indicator.className = 'h-3 w-3 bg-gray-300 dark:bg-gray-600 hover:bg-primary/50 rounded-full transition-all';
+                    entry.target.pause();
                 }
             });
-        }
-        
-        // Обновление счётчика
-        const counter = document.getElementById('carousel-counter');
-        if (counter) {
-            const displayIndex = ((this.currentIndex % this.totalSlides) + this.totalSlides) % this.totalSlides;
-            const startItem = displayIndex + 1;
-            let endItem = Math.min(displayIndex + 1, this.totalSlides);
-            
-            counter.textContent = `Статья ${startItem} из ${this.totalSlides}`;
-        }
-    }
-    
-    next() {
-        if (this.isTransitioning) return;
-        this.isTransitioning = true;
-        this.currentIndex++;
-        this.updateCarousel(true);
-    }
-    
-    prev() {
-        if (this.isTransitioning) return;
-        this.isTransitioning = true;
-        this.currentIndex--;
-        this.updateCarousel(true);
-    }
-    
-    goToSlide(index) {
-        if (this.isTransitioning) return;
-        this.stopAutoplay();
-        this.isTransitioning = true;
-        this.currentIndex = index;
-        this.updateCarousel(true);
-        this.startAutoplay();
-    }
-    
-    initTouchEvents() {
-        let startX = 0;
-        let isDragging = false;
-        
-        this.carousel.addEventListener('touchstart', (e) => {
-            startX = e.touches[0].clientX;
-            isDragging = true;
-            this.stopAutoplay();
         });
-        
-        this.carousel.addEventListener('touchmove', (e) => {
-            if (!isDragging) return;
-            // Не блокируем скролл полностью
+        videos.forEach(v => {
+            videoObserver.observe(v);
+            v.addEventListener('ended', function() { this.currentTime = 0; this.play(); });
         });
-        
-        this.carousel.addEventListener('touchend', (e) => {
-            if (!isDragging) return;
-            isDragging = false;
-            
-            const endX = e.changedTouches[0].clientX;
-            const diff = startX - endX;
-            
-            if (Math.abs(diff) > 50) {
-                if (diff > 0) {
-                    this.next();
-                } else {
-                    this.prev();
-                }
-            }
-            
-            this.startAutoplay();
+    } else {
+        videos.forEach(v => {
+            v.play().catch(e => console.log('Autoplay prevented:', e));
+            v.addEventListener('ended', function() { this.currentTime = 0; this.play(); });
         });
     }
 }
 
-// Initialize on load
+// Initialize everything
 document.addEventListener('DOMContentLoaded', function() {
-    calculateEarnings();
     initBackgroundVideos();
     
-    // Инициализируем карусель с задержкой для гарантированной загрузки
-    setTimeout(() => {
-        const carousel = new TopPostsCarousel();
-        console.log('🎠 Карусель инициализирована');
-        
-        // Дополнительная проверка автопрокрутки через 1 секунду
-        setTimeout(() => {
-            if (!carousel.autoplay) {
-                console.warn('⚠️ Автопрокрутка не запущена, перезапускаем...');
-                carousel.startAutoplay();
-            }
-        }, 1000);
-    }, 200);
+    // Initialize Swiper
+    const topPostsSwiper = new Swiper('.top-posts-swiper', {
+        slidesPerView: 1,
+        spaceBetween: 20,
+        loop: true,
+        autoplay: {
+            delay: 4000,
+            disableOnInteraction: false,
+            pauseOnMouseEnter: true,
+        },
+        pagination: {
+            el: '.swiper-pagination',
+            clickable: true,
+        },
+        navigation: {
+            nextEl: '.swiper-button-next',
+            prevEl: '.swiper-button-prev',
+        },
+        breakpoints: {
+            640: {
+                slidesPerView: 2,
+            },
+            768: {
+                slidesPerView: 3,
+            },
+            1024: {
+                slidesPerView: 4,
+            },
+            1280: {
+                slidesPerView: 5,
+            },
+        }
+    });
+    
+    console.log('🎠 Swiper Premium Carousel Initialized');
 });
 </script>
+
+<!-- Schema.org WebSite -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  "name": "IdealImage.ru",
+  "url": "https://idealimage.ru/",
+  "potentialAction": {
+    "@type": "SearchAction",
+    "target": "https://idealimage.ru/search/?query={search_term_string}",
+    "query-input": "required name=search_term_string"
+  }
+}
+</script>
+
 {% endblock %}
 

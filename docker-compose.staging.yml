@@ -1,0 +1,124 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: idealimage-staging-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-idealimage}
+      POSTGRES_USER: ${POSTGRES_USER:-ideal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strongpass123}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_staging_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ideal} -d ${POSTGRES_DB:-idealimage}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: idealimage-staging-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_staging_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  web:
+    image: python:3.11-slim
+    container_name: idealimage-staging-web
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      DB_ENGINE: postgresql
+      POSTGRES_DB: ${POSTGRES_DB:-idealimage}
+      POSTGRES_USER: ${POSTGRES_USER:-ideal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strongpass123}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://redis:6379/1
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./:/app
+    command: >
+      bash -lc "pip install --no-cache-dir -r requirements.txt &&
+      python manage.py migrate &&
+      python manage.py runserver 0.0.0.0:8000"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-worker:
+    image: python:3.11-slim
+    container_name: idealimage-staging-celery-worker
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      DB_ENGINE: postgresql
+      POSTGRES_DB: ${POSTGRES_DB:-idealimage}
+      POSTGRES_USER: ${POSTGRES_USER:-ideal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strongpass123}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://redis:6379/1
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./:/app
+    command: >
+      bash -lc "pip install --no-cache-dir -r requirements.txt &&
+      celery -A IdealImage_PDJ worker -l info"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  celery-beat:
+    image: python:3.11-slim
+    container_name: idealimage-staging-celery-beat
+    restart: unless-stopped
+    working_dir: /app
+    env_file:
+      - .env
+    environment:
+      DB_ENGINE: postgresql
+      POSTGRES_DB: ${POSTGRES_DB:-idealimage}
+      POSTGRES_USER: ${POSTGRES_USER:-ideal}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-strongpass123}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      REDIS_URL: redis://redis:6379/1
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+    volumes:
+      - ./:/app
+    command: >
+      bash -lc "pip install --no-cache-dir -r requirements.txt &&
+      celery -A IdealImage_PDJ beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres_staging_data:
+  redis_staging_data:

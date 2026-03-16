@@ -3,10 +3,12 @@ Middleware для отлова и обработки 404 ошибок
 Логирует, уведомляет и автоматически создает редиректы
 """
 import logging
+import os
 import re
 from typing import Any, Dict, List, Optional
 
 from django.core.cache import cache
+from django.conf import settings
 from django.http import HttpResponsePermanentRedirect, HttpResponseRedirect
 from django.urls import reverse
 from django.utils import timezone
@@ -29,6 +31,8 @@ SUSPICIOUS_404_PATTERNS = [
     re.compile(r'^/sites/all/', re.IGNORECASE),
     re.compile(r'^/elfinder', re.IGNORECASE),
     re.compile(r'^/0e[0-9a-f]{4,32}\.txt$', re.IGNORECASE),
+    re.compile(r'^/\.well-known/oauth-authorization-server$', re.IGNORECASE),
+    re.compile(r'^/mcp$', re.IGNORECASE),
 ]
 
 
@@ -66,6 +70,11 @@ class Smart404Middleware:
         """Обработка 404 ошибки"""
         path = request.path
 
+        media_fallback = self._resolve_gigachat_media_fallback(path)
+        if media_fallback:
+            logger.info("Media fallback redirect: %s -> %s", path, media_fallback)
+            return HttpResponseRedirect(media_fallback)
+
         if self._should_skip_logging(path):
             return response
         
@@ -96,6 +105,40 @@ class Smart404Middleware:
             if pattern.search(path):
                 return True
         return False
+
+    def _resolve_gigachat_media_fallback(self, path: str) -> Optional[str]:
+        """
+        Для отсутствующих gigachat-файлов ищет файл с тем же basename,
+        но в другом расширении (часто после конвертации в webp).
+        """
+        media_url = settings.MEDIA_URL or "/media/"
+        if not media_url.startswith("/"):
+            media_url = f"/{media_url}"
+        if not media_url.endswith("/"):
+            media_url = f"{media_url}/"
+
+        normalized_path = path.lower()
+        if (
+            "gigachat_" not in normalized_path
+            or not path.startswith(media_url)
+            or "/images/" not in normalized_path
+            or not normalized_path.endswith((".jpg", ".jpeg", ".png", ".webp"))
+        ):
+            return None
+
+        relative_path = path[len(media_url):].lstrip("/")
+        absolute_path = os.path.join(settings.MEDIA_ROOT, relative_path.replace("/", os.sep))
+        base_path, current_ext = os.path.splitext(absolute_path)
+
+        for ext in (".webp", ".jpg", ".jpeg", ".png"):
+            if ext == current_ext.lower():
+                continue
+            candidate_path = f"{base_path}{ext}"
+            if os.path.exists(candidate_path):
+                rel_candidate = os.path.relpath(candidate_path, settings.MEDIA_ROOT).replace("\\", "/")
+                return f"{media_url}{rel_candidate}"
+
+        return None
     
     def find_similar_page(self, path):
         """

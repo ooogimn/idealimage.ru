@@ -4,10 +4,15 @@
 Здесь можно добавить unit-тесты для проверки функционала
 """
 from django.test import TestCase, Client
+from django.test import override_settings
 from django.contrib.auth.models import User
 from decimal import Decimal
+from urllib.parse import urlencode
+import json
+import hmac
+import hashlib
 
-from .models import Donation, DonationSettings
+from .models import Donation, DonationSettings, WebhookEvent
 
 
 class DonationModelTest(TestCase):
@@ -138,6 +143,105 @@ class DonationFormsTest(TestCase):
         
         form = DonationForm(data=form_data)
         self.assertFalse(form.is_valid())
+
+
+@override_settings(YOOKASSA_WEBHOOK_SECRET='test-yoo-secret', SBER_WEBHOOK_SECRET='test-sber-secret')
+class WebhookSecurityTest(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.donation = Donation.objects.create(
+            user_email='hook@example.com',
+            amount=Decimal('1000.00'),
+            payment_method='yandex',
+            status='pending',
+            payment_id='pay-1'
+        )
+
+    def test_yandex_webhook_signature_and_idempotency(self):
+        payload = {
+            'event': 'payment.succeeded',
+            'event_id': 'evt-100',
+            'object': {'id': 'pay-1'}
+        }
+        raw_body = json.dumps(payload).encode('utf-8')
+        signature = hmac.new(
+            b'test-yoo-secret',
+            raw_body,
+            hashlib.sha256
+        ).hexdigest()
+
+        url = '/donations/webhook/yandex/'
+        response = self.client.post(
+            url,
+            data=raw_body,
+            content_type='application/json',
+            HTTP_X_YOO_SIGNATURE=signature
+        )
+        self.assertEqual(response.status_code, 200)
+
+        self.donation.refresh_from_db()
+        self.assertEqual(self.donation.status, 'succeeded')
+        self.assertEqual(WebhookEvent.objects.filter(provider='yookassa', event_id='evt-100').count(), 1)
+
+        duplicate_response = self.client.post(
+            url,
+            data=raw_body,
+            content_type='application/json',
+            HTTP_X_YOO_SIGNATURE=signature
+        )
+        self.assertEqual(duplicate_response.status_code, 200)
+        self.assertEqual(WebhookEvent.objects.filter(provider='yookassa', event_id='evt-100').count(), 1)
+
+    def test_yandex_webhook_rejects_invalid_signature(self):
+        payload = {
+            'event': 'payment.succeeded',
+            'event_id': 'evt-bad-signature',
+            'object': {'id': 'pay-1'}
+        }
+        raw_body = json.dumps(payload).encode('utf-8')
+        response = self.client.post(
+            '/donations/webhook/yandex/',
+            data=raw_body,
+            content_type='application/json',
+            HTTP_X_YOO_SIGNATURE='bad-signature'
+        )
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(WebhookEvent.objects.filter(event_id='evt-bad-signature').exists())
+
+    def test_sber_webhook_signature_and_idempotency(self):
+        self.donation.payment_method = 'sberpay'
+        self.donation.payment_id = 'order-42'
+        self.donation.status = 'pending'
+        self.donation.save(update_fields=['payment_method', 'payment_id', 'status'])
+
+        payload_dict = {'orderId': 'order-42', 'status': '2'}
+        raw_body = urlencode(payload_dict).encode('utf-8')
+        signature = hmac.new(
+            b'test-sber-secret',
+            raw_body,
+            hashlib.sha256
+        ).hexdigest()
+
+        response = self.client.generic(
+            'POST',
+            '/donations/webhook/sber/',
+            raw_body,
+            content_type='application/x-www-form-urlencoded',
+            HTTP_X_SBER_SIGNATURE=signature
+        )
+        self.assertEqual(response.status_code, 200)
+        self.donation.refresh_from_db()
+        self.assertEqual(self.donation.status, 'succeeded')
+
+        duplicate_response = self.client.generic(
+            'POST',
+            '/donations/webhook/sber/',
+            raw_body,
+            content_type='application/x-www-form-urlencoded',
+            HTTP_X_SBER_SIGNATURE=signature
+        )
+        self.assertEqual(duplicate_response.status_code, 200)
+        self.assertEqual(WebhookEvent.objects.filter(provider='sber', event_id='order-42:2').count(), 1)
 
 
 # Добавьте свои тесты здесь

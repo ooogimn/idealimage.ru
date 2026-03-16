@@ -297,6 +297,46 @@ class PaymentWebhookLog(models.Model):
         return f'Webhook от {self.payment_system} - {self.created_at}'
 
 
+class WebhookEvent(models.Model):
+    """
+    Идемпотентный реестр webhook событий.
+    Защищает от повторной обработки одного и того же event_id.
+    """
+
+    provider = models.CharField(max_length=50, verbose_name='Провайдер')
+    event_id = models.CharField(max_length=255, verbose_name='ID события')
+    payload_hash = models.CharField(max_length=64, verbose_name='SHA256 payload')
+    donation = models.ForeignKey(
+        Donation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='webhook_events',
+        verbose_name='Связанный донат'
+    )
+    processed = models.BooleanField(default=False, verbose_name='Обработано')
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name='Создано')
+    processed_at = models.DateTimeField(null=True, blank=True, verbose_name='Обработано в')
+
+    class Meta:
+        verbose_name = 'Webhook событие'
+        verbose_name_plural = 'Webhook события'
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['provider', 'event_id'],
+                name='uq_webhook_provider_event'
+            )
+        ]
+        indexes = [
+            models.Index(fields=['provider', 'event_id']),
+            models.Index(fields=['processed', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.provider}:{self.event_id}'
+
+
 class DonationSettings(models.Model):
     """Настройки системы донатов"""
     

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
-    help = 'Настройка ежедневной генерации всех 12 гороскопов в 10:00 через Django-Q'
+    help = 'Настройка ежедневной генерации всех 12 гороскопов в 10:00 через Celery Beat'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -121,12 +121,12 @@ class Command(BaseCommand):
         self.stdout.write(f'   📅 Следующий запуск: {schedule.next_run}')
         self.stdout.write('')
         
-        # Синхронизируем с Django-Q
-        self.stdout.write('🔄 Синхронизация с Django-Q...')
+        # Синхронизируем с Celery Beat
+        self.stdout.write('🔄 Синхронизация с Celery Beat...')
         try:
             call_command('sync_schedules', '--force')
             self.stdout.write(self.style.SUCCESS(
-                '✅ Расписание синхронизировано с Django-Q'
+                '✅ Расписание синхронизировано с Celery Beat'
             ))
         except Exception as e:
             self.stdout.write(self.style.ERROR(
@@ -141,10 +141,10 @@ class Command(BaseCommand):
         self.stdout.write('')
         self.stdout.write('📋 Проверьте расписание:')
         self.stdout.write('   - Админка: /admin/Asistent/aischedule/')
-        self.stdout.write('   - Django-Q: /admin/django_q/schedule/')
+        self.stdout.write('   - Celery Beat: /admin/django_celery_beat/periodictask/')
         self.stdout.write('')
-        self.stdout.write('⚠️ ВАЖНО: Убедитесь, что Django-Q запущен:')
-        self.stdout.write('   python manage.py qcluster')
+        self.stdout.write('⚠️ ВАЖНО: Убедитесь, что Celery worker/beat запущены:')
+        self.stdout.write('   celery -A IdealImage_PDJ worker -l info')
         self.stdout.write('')
         self.stdout.write('📝 Для ручного запуска:')
         self.stdout.write(f'   python manage.py generate_all_horoscopes_now')

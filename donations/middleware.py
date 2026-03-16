@@ -1,5 +1,6 @@
 from django.utils import timezone
 from django.contrib.auth.models import AnonymousUser
+from django.core.cache import cache
 
 
 class SubscriptionMiddleware:
@@ -20,22 +21,35 @@ class SubscriptionMiddleware:
         if hasattr(request, 'user') and not isinstance(request.user, AnonymousUser) and request.user.is_authenticated:
             try:
                 from donations.models import Subscription
+                user_id = request.user.id
+                now_ts = int(timezone.now().timestamp())
+                bucket = now_ts // 300  # cache granularity 5 minutes
+                premium_key = f'subscription:premium:{user_id}:{bucket}'
+                ai_key = f'subscription:ai:{user_id}:{bucket}'
                 
                 # Проверяем Premium подписку
-                request.has_premium = Subscription.objects.filter(
-                    user=request.user,
-                    subscription_type='premium',
-                    is_active=True,
-                    end_date__gt=timezone.now()
-                ).exists()
+                cached_premium = cache.get(premium_key)
+                if cached_premium is None:
+                    cached_premium = Subscription.objects.filter(
+                        user=request.user,
+                        subscription_type='premium',
+                        is_active=True,
+                        end_date__gt=timezone.now()
+                    ).exists()
+                    cache.set(premium_key, cached_premium, 300)
+                request.has_premium = bool(cached_premium)
                 
                 # Проверяем AI-Соавтор подписку
-                request.has_ai_coauthor = Subscription.objects.filter(
-                    user=request.user,
-                    subscription_type='ai_coauthor',
-                    is_active=True,
-                    end_date__gt=timezone.now()
-                ).exists()
+                cached_ai = cache.get(ai_key)
+                if cached_ai is None:
+                    cached_ai = Subscription.objects.filter(
+                        user=request.user,
+                        subscription_type='ai_coauthor',
+                        is_active=True,
+                        end_date__gt=timezone.now()
+                    ).exists()
+                    cache.set(ai_key, cached_ai, 300)
+                request.has_ai_coauthor = bool(cached_ai)
                 
             except Exception as e:
                 # В случае ошибки (например, миграции не применены) - просто пропускаем

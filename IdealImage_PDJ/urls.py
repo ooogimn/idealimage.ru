@@ -8,6 +8,11 @@ from blog.sitemaps import CategorySitemap, PostSitemap, TagSitemap, AuthorSitema
 from django.views.static import serve
 from django.views.generic import RedirectView
 
+try:
+    import Telega.urls as telega_urls  # optional legacy module
+except Exception:
+    telega_urls = None
+
 sitemaps = {
     'posts': PostSitemap,
     'categorys': CategorySitemap,
@@ -48,6 +53,11 @@ urlpatterns = [
     re_path(r'^robots\.txt$', serve, {'document_root': settings.BASE_DIR, 'path': "robots.txt"}),
     re_path(r'^favicon\.ico$', serve, {'document_root': settings.BASE_DIR, 'path': "favicon.ico"}),
 ]
+
+if telega_urls:
+    urlpatterns += [
+        path('telega/', include((telega_urls.urlpatterns, 'Telega'), namespace='telega')),
+    ]
 
 if settings.DEBUG:
     urlpatterns += [

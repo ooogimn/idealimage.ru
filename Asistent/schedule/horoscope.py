@@ -2,6 +2,7 @@
 Генерация гороскопов через промпт-шаблон
 Упрощенная версия - использует UniversalContentGenerator
 """
+import json
 import logging
 from typing import Dict, Any
 from django.utils import timezone
@@ -39,8 +40,17 @@ def generate_horoscope_from_prompt_template(schedule_id: int) -> Dict[str, Any]:
         logger.info(f"   📊 Статей за запуск: {schedule.articles_per_run}")
         logger.info(f"   🔮 Режим: генерация гороскопа из шаблона промпта")
         
-        # Получаем параметры из payload_template
-        payload = schedule.payload_template or {}
+        # Получаем параметры из payload_template (может быть dict или JSON-строка из БД)
+        raw_payload = schedule.payload_template
+        if isinstance(raw_payload, str):
+            try:
+                payload = json.loads(raw_payload) if raw_payload.strip() else {}
+            except (json.JSONDecodeError, AttributeError):
+                payload = {}
+        elif isinstance(raw_payload, dict):
+            payload = raw_payload
+        else:
+            payload = {}
         generation_delay = payload.get('generation_delay', 20)
         retry_count = payload.get('retry_count', 2)
         retry_delay = payload.get('retry_delay', 60)

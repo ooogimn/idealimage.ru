@@ -851,35 +851,42 @@ def _ai_schedules_impl(request):
 def integration_events(request):
     """Страница событий интеграций"""
     from django.core.paginator import Paginator
-    
+
     # Фильтры
     service_filter = request.GET.get('service', 'all')
     severity_filter = request.GET.get('severity', 'all')
-    
-    # Получаем все события
-    events = IntegrationEvent.objects.all()
-    
-    # Применяем фильтры
-    if service_filter != 'all':
-        events = events.filter(service=service_filter)
-    
-    if severity_filter != 'all':
-        events = events.filter(severity=severity_filter)
-    
-    # Сортировка по умолчанию: новые первые
-    events = events.order_by('-created_at')
-    
-    # Пагинация
-    paginator = Paginator(events, 50)  # 50 событий на страницу
-    page_number = request.GET.get('page', 1)
-    page_obj = paginator.get_page(page_number)
-    
-    # Статистика
-    total_events = IntegrationEvent.objects.count()
-    error_count = IntegrationEvent.objects.filter(severity='error').count()
-    warning_count = IntegrationEvent.objects.filter(severity='warning').count()
-    info_count = IntegrationEvent.objects.filter(severity='info').count()
-    
+    try:
+        # Получаем все события
+        events = IntegrationEvent.objects.all()
+
+        # Применяем фильтры
+        if service_filter != 'all':
+            events = events.filter(service=service_filter)
+
+        if severity_filter != 'all':
+            events = events.filter(severity=severity_filter)
+
+        # Сортировка по умолчанию: новые первые
+        events = events.order_by('-created_at')
+
+        # Пагинация
+        paginator = Paginator(events, 50)  # 50 событий на страницу
+        page_number = request.GET.get('page', 1)
+        page_obj = paginator.get_page(page_number)
+
+        # Статистика
+        total_events = IntegrationEvent.objects.count()
+        error_count = IntegrationEvent.objects.filter(severity='error').count()
+        warning_count = IntegrationEvent.objects.filter(severity='warning').count()
+        info_count = IntegrationEvent.objects.filter(severity='info').count()
+    except ProgrammingError as e:
+        logger.warning("integration_events: таблица IntegrationEvent отсутствует (%s)", e)
+        page_obj = Paginator([], 50).get_page(1)
+        total_events = 0
+        error_count = 0
+        warning_count = 0
+        info_count = 0
+
     context = {
         'page_obj': page_obj,
         'events': page_obj,
@@ -891,8 +898,12 @@ def integration_events(request):
         'severity_filter': severity_filter,
         'service_choices': IntegrationEvent.SERVICE_CHOICES,
         'severity_choices': IntegrationEvent.SEVERITY_CHOICES,
+        'page_title': 'События интеграций',
+        'page_description': 'Мониторинг интеграционных событий внешних сервисов',
+        'og_title': 'События интеграций',
+        'og_description': 'Мониторинг интеграционных событий внешних сервисов',
     }
-    
+
     return render(request, 'Asistent/integration_events.html', context)
 
 

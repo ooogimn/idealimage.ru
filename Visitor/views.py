@@ -267,12 +267,15 @@ class UserLoginView(SuccessMessageMixin, LoginView):
         # Автоматически устанавливаем долгую сессию (1 год)
         self.request.session.set_expiry(31536000)  # 365 дней
         
-        # Логируем вход
-        ActivityLog.objects.create(
-            user=self.request.user,
-            action_type='user_registered',  # Используем существующий тип
-            description=f'Пользователь {self.request.user.username} вошел в систему'
-        )
+        # Логируем вход (не падаем при ошибке — вход важнее лога)
+        try:
+            ActivityLog.objects.create(
+                user=self.request.user,
+                action_type='user_registered',
+                description=f'Пользователь {self.request.user.username} вошел в систему'
+            )
+        except Exception:
+            logger.exception('ActivityLog create failed on login')
         
         return response
         

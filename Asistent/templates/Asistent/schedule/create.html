@@ -42,6 +42,9 @@
                         <div>
                             <label class="block text-sm font-semibold text-white/90 mb-2">{{ form.prompt_template.label }}</label>
                             {{ form.prompt_template }}
+                            <div id="dynamic-variables-container" class="mt-3 space-y-2" aria-label="Переменные шаблона">
+                                <!-- Сюда JS подставляет поля для переменных из выбранного шаблона -->
+                            </div>
                         </div>
                     </div>
 
@@ -973,6 +976,66 @@ function updateLoadWarning() {
     }
 }
 
+// ========== ПЕРЕМЕННЫЕ ШАБЛОНА (ТЗ №2) ==========
+function getPromptVariablesUrl(templateId) {
+    return "{% url 'asistent:get_prompt_variables' 0 %}".replace('0', String(templateId));
+}
+
+function getCurrentStaticParams() {
+    const hidden = document.getElementById('static_params_hidden');
+    if (!hidden || !hidden.value) return {};
+    try {
+        return JSON.parse(hidden.value) || {};
+    } catch (e) {
+        return {};
+    }
+}
+
+function loadTemplateVariables(templateId, existingParams) {
+    const container = document.getElementById('dynamic-variables-container');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!templateId) return;
+
+    const url = getPromptVariablesUrl(templateId);
+    fetch(url, {
+        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success || !Array.isArray(data.variables) || data.variables.length === 0) {
+                container.innerHTML = '<p class="text-xs text-gray-400">Переменных в шаблоне не найдено</p>';
+                return;
+            }
+            const params = existingParams || {};
+            data.variables.forEach(varName => {
+                const value = params[varName] != null ? String(params[varName]) : '';
+                const div = document.createElement('div');
+                div.className = 'flex items-center gap-2';
+                div.innerHTML = `
+                    <label class="text-sm text-white/80 w-32 shrink-0">${escapeHtml(varName)}</label>
+                    <input type="text" class="template-var-value flex-1" data-var-name="${escapeHtml(varName)}"
+                           value="${escapeHtml(value)}" placeholder="значение"
+                           style="padding: 0.5rem; background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); color: white; border-radius: 0.375rem;">
+                `;
+                container.appendChild(div);
+            });
+        })
+        .catch(err => {
+            console.warn('Ошибка загрузки переменных шаблона:', err);
+            container.innerHTML = '<p class="text-xs text-rose-400">Не удалось загрузить переменные</p>';
+        });
+}
+
+function attachPromptTemplateListener() {
+    const selectEl = document.getElementById('id_prompt_template');
+    if (!selectEl) return;
+    selectEl.addEventListener('change', function() {
+        const templateId = this.value;
+        loadTemplateVariables(templateId, getCurrentStaticParams());
+    });
+}
+
 // ========== ГЕНЕРАЦИЯ JSON ПЕРЕД ОТПРАВКОЙ ==========
 document.querySelector('form')?.addEventListener('submit', function(e) {
     // Собираем статические параметры
@@ -985,6 +1048,15 @@ document.querySelector('form')?.addEventListener('submit', function(e) {
             if (key && value) {
                 staticParams[key] = value;
             }
+        });
+    }
+    // Добавляем значения из полей переменных шаблона (ТЗ №2) в static_params
+    const dynamicVarsContainer = document.getElementById('dynamic-variables-container');
+    if (dynamicVarsContainer) {
+        dynamicVarsContainer.querySelectorAll('input.template-var-value').forEach(input => {
+            const name = input.getAttribute('data-var-name');
+            const value = input.value.trim();
+            if (name) staticParams[name] = value;
         });
     }
     const staticHidden = document.getElementById('static_params_hidden');
@@ -1062,6 +1134,11 @@ window.addEventListener('DOMContentLoaded', function() {
     refreshSchedulePreview();
     triggerSchedulePreviewUpdate(true);
     updateLoadWarning();
+    attachPromptTemplateListener();
+    const promptTemplateSelect = document.getElementById('id_prompt_template');
+    if (promptTemplateSelect && promptTemplateSelect.value) {
+        loadTemplateVariables(promptTemplateSelect.value, getCurrentStaticParams());
+    }
     
     const articlesField = document.getElementById('id_articles_per_run');
     if (articlesField) {

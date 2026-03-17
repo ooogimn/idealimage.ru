@@ -104,7 +104,7 @@ class Command(BaseCommand):
                 "base_tags": ["гороскоп", "прогноз на завтра"],
                 "prompt_name": "DAILY_HOROSCOPE_PROMPT",
                 "image_prompt_name": "HOROSCOPE_IMAGE_PROMPT",
-                "generation_delay": 5,  # Задержка 5 секунд между генерациями
+                "generation_delay": 300,  # 5 минут между знаками (щадящий режим для API)
                 "retry_count": 2,
                 "retry_delay": 60,
             }

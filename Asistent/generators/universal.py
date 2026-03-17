@@ -13,10 +13,13 @@
 - SCHEDULED: Через систему schedule
 """
 
+import json
 import logging
+import re
 import time
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 from django.db import transaction
+from django.conf import settings
 from django.utils import timezone
 from django.utils.html import strip_tags
 from django.contrib.auth.models import User
@@ -39,6 +42,17 @@ from .heartbeat import HeartbeatManager
 from .metrics import MetricsTracker
 
 logger = logging.getLogger(__name__)
+
+# Общие инструкции для генерации статей (стилистика, запреты) — не дублировать в каждом промпте
+DEFAULT_SYSTEM_PROMPT = (
+    'Пиши экспертно и дружелюбно. Избегай канцелярита и воды. '
+    'Не используй слова: «данный», «является», «осуществлять», «в рамках».'
+)
+
+# Quality Gate (ТЗ №4): минимум символов для публикации
+MIN_TEXT_PUBLISH = 2000
+MIN_TEXT_HOROSCOPE = 1500
+QUALITY_GATE_NEEDS_EDIT = 'Нужна ручная правка: текст или изображение не прошли проверку.'
 
 
 class UniversalContentGenerator:
@@ -265,6 +279,9 @@ class UniversalContentGenerator:
         if not article_prompt.strip():
             raise ValueError('Промпт пустой после рендеринга')
         
+        # Системный промпт (общие инструкции — экономия токенов)
+        context['_system_prompt'] = self._get_system_prompt()
+        
         # Генерация через ContentGenerationFactory (из Test_Promot)
         strategy = ContentGenerationFactory.create_strategy(
             self.template,
@@ -293,6 +310,12 @@ class UniversalContentGenerator:
         # Конвертация Markdown → HTML
         content_html = _convert_markdown_to_html(article_text)
         
+        # FAQ по тексту статьи (ТЗ №3, подготовка к Фазе C)
+        faq_list = self._generate_faq(article_text)
+        if faq_list:
+            content_html += self._format_faq_html(faq_list)
+            logger.info(f"   ✅ Добавлен блок FAQ: {len(faq_list)} вопросов")
+        
         logger.info(f"   ✅ Текст сгенерирован (длина: {len(article_text)} символов)")
         
         return {
@@ -301,7 +324,8 @@ class UniversalContentGenerator:
             'plain_text': article_text,
             'source_info': source_info,
             'prompt': article_prompt,
-            'parsed_content': parsed_content,  # Добавляем спарсенный контент
+            'parsed_content': parsed_content,
+            'faq': faq_list if faq_list else None,
         }
     
     def _generate_with_retry(self, strategy, prompt: str, context: Dict) -> tuple:
@@ -364,6 +388,92 @@ class UniversalContentGenerator:
         
         raise ValueError('Не удалось сгенерировать текст после всех попыток')
     
+    def _get_system_prompt(self) -> str:
+        """Общие инструкции для GigaChat (из настроек или константа). Не дублируются в каждом запросе."""
+        return getattr(settings, 'GIGACHAT_ARTICLE_SYSTEM_PROMPT', None) or DEFAULT_SYSTEM_PROMPT
+    
+    def _generate_faq(self, article_plain_text: str) -> List[Dict]:
+        """
+        Генерация 3 вопросов и ответов по статье. ТЗ №3, подготовка к Фазе C.
+        
+        Returns:
+            Список dict с ключами q, a или пустой список при ошибке.
+        """
+        if not article_plain_text or not self._client:
+            return []
+        text_snippet = (article_plain_text[:4000] + '...') if len(article_plain_text) > 4000 else article_plain_text
+        prompt = (
+            'На основе текста статьи ниже создай ровно 3 пары вопрос-ответ для блока FAQ. '
+            'Ответ выведи только в формате JSON, без markdown и пояснений, массив объектов с ключами "q" и "a". '
+            'Пример: [{"q": "Вопрос?", "a": "Ответ."}, ...]\n\nТекст статьи:\n' + text_snippet
+        )
+        try:
+            raw = self._client.chat(message=prompt)
+            if not raw or not raw.strip():
+                return []
+            s = raw.strip()
+            s = re.sub(r'^```\w*\n?', '', s)
+            s = re.sub(r'\n?```\s*$', '', s)
+            data = json.loads(s)
+            if not isinstance(data, list):
+                return []
+            result = []
+            for item in data:
+                if isinstance(item, dict) and 'q' in item and 'a' in item:
+                    result.append({'q': str(item['q']).strip(), 'a': str(item['a']).strip()})
+            return result[:5]
+        except Exception as e:
+            logger.warning(f"   ⚠️ Ошибка генерации FAQ: {e}")
+            return []
+    
+    @staticmethod
+    def _format_faq_html(faq_list: List[Dict]) -> str:
+        """Формирует HTML-блок FAQ и LD+JSON FAQPage для вставки в контент статьи (ТЗ №4)."""
+        if not faq_list:
+            return ''
+        parts = ['<div class="faq-block" style="margin-top:1.5rem;"><h3>Частые вопросы</h3>']
+        for i, item in enumerate(faq_list, 1):
+            q = item.get('q', '').replace('<', '&lt;').replace('>', '&gt;')
+            a = item.get('a', '').replace('<', '&lt;').replace('>', '&gt;')
+            parts.append(f'<p><strong>{i}. {q}</strong><br>{a}</p>')
+        parts.append('</div>')
+        questions_for_schema = [{'question': item.get('q', ''), 'answer': item.get('a', '')} for item in faq_list]
+        try:
+            from blog.schema import generate_faq_schema, schema_to_json
+            faq_schema = generate_faq_schema(questions_for_schema)
+            parts.append(f'<script type="application/ld+json">\n{schema_to_json(faq_schema)}\n</script>')
+        except Exception as e:
+            logger.debug("FAQ schema skip: %s", e)
+        return '\n'.join(parts)
+    
+    def _check_quality_gate(self, content_result: Dict, image_result: Dict) -> tuple:
+        """
+        Quality Gate (ТЗ №4): проверка длины текста и наличия валидного изображения.
+        Returns:
+            (status, note): 'published' или 'draft', и примечание при сбое.
+        """
+        plain = (content_result.get('plain_text') or '').strip()
+        min_len = MIN_TEXT_HOROSCOPE if getattr(self.template, 'category', None) == 'horoscope' else MIN_TEXT_PUBLISH
+        if len(plain) < min_len:
+            logger.warning(f"   ⚠️ Quality Gate: текст {len(plain)} символов (мин. {min_len})")
+            return 'draft', QUALITY_GATE_NEEDS_EDIT
+        has_image = bool(image_result.get('path'))
+        if not has_image:
+            logger.warning("   ⚠️ Quality Gate: нет изображения")
+            return 'draft', QUALITY_GATE_NEEDS_EDIT
+        return 'published', ''
+    
+    @staticmethod
+    def _validate_image_exists(file_field) -> bool:
+        """Проверка, что файл изображения физически существует на сервере (ТЗ №4)."""
+        if not file_field or not getattr(file_field, 'name', None):
+            return False
+        try:
+            from django.core.files.storage import default_storage
+            return default_storage.exists(file_field.name)
+        except Exception:
+            return False
+    
     def _generate_image(self, context: Dict) -> Dict:
         """
         Генерация изображения.
@@ -420,11 +530,11 @@ class UniversalContentGenerator:
         # Категория
         category = self.template.blog_category or Category.objects.first()
         
-        # Статус публикации
-        if self.config.mode == GeneratorMode.AUTO:
-            status = 'published'
-        else:
-            status = 'draft'
+        # Статус: по умолчанию published для AUTO, но ниже применим Quality Gate
+        want_published = self.config.mode == GeneratorMode.AUTO
+        status, quality_note = self._check_quality_gate(content_result, image_result)
+        if want_published and status == 'draft':
+            logger.warning(f"   📋 Quality Gate: статья в черновик. {quality_note}")
         
         # Создаём пост
         with transaction.atomic():
@@ -436,19 +546,27 @@ class UniversalContentGenerator:
                 description=strip_tags(content_result['content'])[:200],
                 status=status,
             )
-            
-            # Флаги пропуска автоматической обработки
+            if quality_note:
+                post.ai_moderation_notes = quality_note
             post._skip_auto_moderation = True
             post._skip_auto_publication = True
             post.save()
             
             logger.info(f"   ✅ Пост создан: ID={post.id}, статус={status}")
             
-            # Изображение
+            # Изображение + проверка существования файла (ТЗ №4)
             if image_result.get('path'):
                 post.kartinka = image_result['path']
                 post.save(update_fields=['kartinka'])
-                logger.info(f"   🖼️ Изображение добавлено: {image_result['path']}")
+                if self._validate_image_exists(post.kartinka):
+                    logger.info(f"   🖼️ Изображение добавлено: {image_result['path']}")
+                else:
+                    logger.warning("   ⚠️ Файл изображения не найден на диске")
+                    if status == 'published':
+                        post.status = 'draft'
+                        post.ai_moderation_notes = (post.ai_moderation_notes or '') + ' Изображение отсутствует.'
+                        post.save(update_fields=['status', 'ai_moderation_notes'])
+                        status = 'draft'
             
             # Теги (через TagProcessor из Test_Promot)
             tag_processor = TagProcessor(self.template)
@@ -457,11 +575,27 @@ class UniversalContentGenerator:
                 post.tags.add(*valid_tags)
                 logger.info(f"   🏷️ Теги добавлены: {len(valid_tags)} шт.")
         
-        # Telegram (только для AUTO режима)
+        # Telegram (только для AUTO и опубликованного)
         if self.config.mode == GeneratorMode.AUTO and status == 'published':
             self._send_to_telegram(post)
         
+        # Мгновенная индексация (ТЗ №4): Яндекс.Вебмастер / Google / IndexNow
+        if status == 'published':
+            self._submit_for_indexing(post)
+        
         return post
+    
+    def _submit_for_indexing(self, post: Post):
+        """Отправка статьи на индексацию сразу после публикации (ТЗ №4)."""
+        try:
+            from Asistent.schedule.services import submit_post_for_indexing
+            result = submit_post_for_indexing(post.id)
+            if result:
+                logger.info(f"   📤 Индексация: {result}")
+            else:
+                logger.debug("   Индексация не выполнена (пост не published или ошибка)")
+        except Exception as e:
+            logger.warning(f"   ⚠️ Ошибка отправки на индексацию: {e}")
     
     def _send_to_telegram(self, post: Post):
         """

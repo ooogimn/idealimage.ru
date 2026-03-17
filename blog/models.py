@@ -8,8 +8,25 @@ from ckeditor.fields import RichTextField
 from taggit.managers import TaggableManager
 from unidecode import unidecode
 from utilits.utils import image_compress, unique_slugify
+import re
 
 User = get_user_model()
+
+
+def _normalize_ai_text(raw_text: str) -> str:
+    """
+    Нормализация артефактов экранирования после генерации/миграции:
+    - literal \\r\\n / \\n -> реальные переносы строк
+    - literal \\" -> "
+    - схлопывание избыточных пустых строк
+    """
+    if not raw_text or not isinstance(raw_text, str):
+        return raw_text
+
+    text = raw_text.replace("\\r\\n", "\n").replace("\\n", "\n").replace('\\"', '"')
+    text = text.replace("\r\n", "\n")
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text
 
 
 class Post(models.Model):
@@ -382,6 +399,11 @@ class Post(models.Model):
         """   Сохранение полей модели при их отсутствии заполнения   """
         if not self.slug:
             self.slug = unique_slugify(self, self.title)
+
+        # Защита от повторного попадания экранированных артефактов в БД
+        self.content = _normalize_ai_text(self.content)
+        self.ai_draft_original = _normalize_ai_text(self.ai_draft_original)
+        self.ai_draft_improved = _normalize_ai_text(self.ai_draft_improved)
         
         # АВТОЗАПОЛНЕНИЕ: description для телеграмма (первые 120 слов из content)
         if self.content and not self.description:

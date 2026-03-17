@@ -10,7 +10,7 @@ from django.utils import timezone
 
 
 class Command(BaseCommand):
-    help = "Создаёт резервную копию MySQL базы данных в каталог backups/db."
+    help = "Создаёт резервную копию PostgreSQL базы данных в каталог backups/db."
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -22,8 +22,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         db_settings = settings.DATABASES.get("default", {})
-        if "mysql" not in db_settings.get("ENGINE", ""):
-            raise CommandError("Бекап поддерживается только для MySQL подключений.")
+        if "postgresql" not in db_settings.get("ENGINE", ""):
+            raise CommandError("Команда поддерживает только PostgreSQL подключение.")
 
         backup_dir = Path(settings.BASE_DIR) / "backups" / "db"
         backup_dir.mkdir(parents=True, exist_ok=True)
@@ -32,20 +32,20 @@ class Command(BaseCommand):
         file_path = backup_dir / f"db_backup_{timestamp}.sql.gz"
 
         host = db_settings.get("HOST") or "localhost"
-        port = str(db_settings.get("PORT") or "3306")
+        port = str(db_settings.get("PORT") or "5432")
         user = db_settings.get("USER")
         name = db_settings.get("NAME")
         password = db_settings.get("PASSWORD", "")
 
-        mysqldump_cmd = [
-            "mysqldump",
+        pg_dump_cmd = [
+            "pg_dump",
             f"--host={host}",
             f"--port={port}",
             f"--user={user}",
-            "--single-transaction",
-            "--quick",
-            "--no-tablespaces",
-            "--set-gtid-purged=OFF",
+            "--format=plain",
+            "--no-owner",
+            "--no-privileges",
+            "--encoding=UTF8",
             name,
         ]
 
@@ -53,23 +53,23 @@ class Command(BaseCommand):
 
         env = os.environ.copy()
         if password:
-            env["MYSQL_PWD"] = password
+            env["PGPASSWORD"] = password
 
         try:
             with gzip.open(file_path, "wb") as archive:
                 result = subprocess.run(
-                    mysqldump_cmd,
+                    pg_dump_cmd,
                     stdout=archive,
                     stderr=subprocess.PIPE,
                     env=env,
                     check=False,
                 )
         except FileNotFoundError as exc:
-            raise CommandError("mysqldump не найден в PATH") from exc
+            raise CommandError("pg_dump не найден в PATH") from exc
 
         if result.returncode != 0:
             file_path.unlink(missing_ok=True)
-            raise CommandError(f"mysqldump завершился с ошибкой: {result.stderr.decode('utf-8', errors='ignore')}")
+            raise CommandError(f"pg_dump завершился с ошибкой: {result.stderr.decode('utf-8', errors='ignore')}")
 
         self.stdout.write(self.style.SUCCESS("✅ Бэкап успешно создан"))
 

@@ -8,8 +8,8 @@ from .base import *
 DEBUG = config('DEBUG', default=False, cast=bool)
 
 # Пути для статики и медиа на VPS
-STATIC_ROOT = '/var/www/idealimage/staticfiles'
-MEDIA_ROOT = '/var/www/idealimage/media'
+STATIC_ROOT = '/var/www/idealimage.ru/staticfiles'
+MEDIA_ROOT = '/var/www/idealimage.ru/media'
 
 # Whitenoise для раздачи статики с компрессией (только в prod)
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'

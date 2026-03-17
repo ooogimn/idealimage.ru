@@ -112,7 +112,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('Asistent', '0073_alter_authornotification_options'),
-        ('schedule', '__first__'),
+        # Зависимость от schedule убрана: 0074 уже применена в БД до появления schedule.0001_initial
     ]
 
     operations = [

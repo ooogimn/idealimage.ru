@@ -4,7 +4,8 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib.admin.views.decorators import staff_member_required
-from django.http import JsonResponse, Http404
+from django.http import JsonResponse, Http404, HttpResponse
+from django.db.utils import ProgrammingError
 from django.views.decorators.http import require_POST
 from django.db.models import Sum, Count, Q, F, ExpressionWrapper, DurationField, OuterRef, Subquery
 from django.db.models.functions import Lower
@@ -396,6 +397,46 @@ def admin_dashboard(request):
         }
         
         return render(request, 'Asistent/admin_dashboard.html', context)
+    except ProgrammingError as e:
+        logger.warning('admin_dashboard: таблицы БД отсутствуют (%s)', e)
+        fallback = {
+            'djangoq_status': {},
+            'djangoq_health': {},
+            'tasks_for_review': [],
+            'overdue_tasks': [],
+            'tasks_stats': {'tasks_for_review': 0, 'overdue_tasks': 0, 'active_authors': 0, 'ai_articles_today': 0},
+            'ai_schedules': [],
+            'recent_schedule_runs': [],
+            'schedule_run_stats_today': {},
+            'schedule_run_stats_week': {},
+            'schedule_run_failures': [],
+            'dashboard_schedules': [],
+            'now': timezone.now(),
+            'daily_stats': {},
+            'quality_metrics': {},
+            'ai_vs_human': {},
+            'schedule_performance': [],
+            'cost_analysis': {},
+            'trends': [],
+            'gigachat_balances': {},
+            'costs_today': {},
+            'costs_week': {},
+            'costs_month': {},
+            'system_alerts': [],
+            'model_distribution': {},
+            'navigation_stats': {},
+            'seo_stats': {},
+            'horoscope_metrics': {},
+            'usage_history': [],
+            'period_days': period_days,
+            'available_periods': [7, 14, 30, 60, 90],
+            'page_title': 'AI Control Center — IdealImage.ru',
+            'page_description': 'Центр управления AI-ассистентом',
+            'meta_keywords': '',
+            'og_title': 'AI Control Center',
+            'og_description': 'Панель администратора',
+        }
+        return render(request, 'Asistent/admin_dashboard.html', fallback)
     except Exception as e:
         logger.exception('admin_dashboard failed: %s', e)
         fallback = {
@@ -622,7 +663,37 @@ def reject_task(request, task_id):
 @staff_member_required
 def ai_schedules(request):
     """Управление расписаниями AI и системными задачами Django-Q"""
+    try:
+        return _ai_schedules_impl(request)
+    except ProgrammingError as e:
+        logger.warning('ai_schedules: tables missing (%s)', e)
+        return render(request, 'Asistent/ai_schedules.html', {
+            'current_tab': 'ai',
+            'schedules': [],
+            'system_schedules': [],
+            'ai_count': 0,
+            'system_count': 0,
+            'page_title': 'Управление расписаниями - IdealImage.ru',
+            'page_description': 'AI-генерация и системные задачи Celery Beat',
+            'view_mode': 'grid',
+            'status_filter': 'all',
+            'run_state_filter': 'all',
+            'type_filter': 'all',
+            'sort_param': 'created_at',
+            'sort_direction': 'desc',
+            'grid_view_query': 'view=grid',
+            'table_view_query': 'view=table',
+            'reset_filters_query': 'view=grid',
+            'filters_active': False,
+            'filter_querystring': 'view=grid',
+            'sort_options': [],
+            'direction_options': [('desc', 'По убыванию'), ('asc', 'По возрастанию')],
+            'tables_missing': True,
+        })
 
+
+def _ai_schedules_impl(request):
+    """Реализация страницы расписаний AI (вызывается из ai_schedules)."""
     current_tab = request.GET.get('tab', 'ai')
 
     # Параметры отображения и фильтрации
@@ -770,6 +841,7 @@ def ai_schedules(request):
         'reset_filters_query': reset_filters_query,
         'filters_active': filters_active,
         'filter_querystring': filter_querystring,
+        'tables_missing': False,
     }
 
     return render(request, 'Asistent/ai_schedules.html', context)

@@ -5,13 +5,21 @@
 import os
 from pathlib import Path
 from datetime import timedelta
-from decouple import config
+from decouple import config, Config, RepositoryEnv
 
 
 # Создайте пути внутри проекта следующим образом: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 LOG_DIR = os.path.join(BASE_DIR, 'logs')
 os.makedirs(LOG_DIR, exist_ok=True)
+
+_env_file_path = BASE_DIR / '.env'
+_file_env_config = None
+if _env_file_path.exists():
+    try:
+        _file_env_config = Config(RepositoryEnv(str(_env_file_path)))
+    except Exception:
+        _file_env_config = None
 
 # Безопасность - используем переменные окружения
 SECRET_KEY = config('SECRET_KEY')  # Обязательно задать в .env!
@@ -115,46 +123,75 @@ WSGI_APPLICATION = 'IdealImage_PDJ.wsgi.application'
 
 
 # ============================================================================
-# БАЗА ДАННЫХ — автоматически выбирается по DB_ENGINE в .env
-# DB_ENGINE=mysql      → локальная разработка / shared hosting
-# DB_ENGINE=postgresql → VPS продакшен
+# БАЗА ДАННЫХ — PostgreSQL only
 # ============================================================================
+for _pg_env_key in (
+    'PGHOST',
+    'PGPORT',
+    'PGDATABASE',
+    'PGUSER',
+    'PGPASSWORD',
+    'PGSERVICE',
+    'PGSERVICEFILE',
+    'PGPASSFILE',
+    'PGOPTIONS',
+    'PGSSLMODE',
+    'PGREQUIRESSL',
+):
+    os.environ.pop(_pg_env_key, None)
 
-_db_engine = config('DB_ENGINE', default='postgresql')
 
-if _db_engine == 'mysql':
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.mysql',
-            'NAME': config('DB_NAME'),
-            'USER': config('DB_USER'),
-            'PASSWORD': config('DB_PASSWORD'),
-            'HOST': config('DB_HOST', default='localhost'),
-            'PORT': config('DB_PORT', default='3306'),
-            'OPTIONS': {
-                'charset': 'utf8mb4',
-                'connect_timeout': 10,
-            },
-            'ATOMIC_REQUESTS': False,
-            'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=300, cast=int),
-        }
+def _sanitize_db_value(value, *, default=''):
+    """
+    Нормализует значения DB-параметров из env:
+    - убирает случайные неразрывные пробелы и управляющие символы
+    - удаляет обрамляющие кавычки после copy/paste
+    """
+    if value is None:
+        return default
+
+    text = str(value).replace('\u00a0', ' ').strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in ('"', "'"):
+        text = text[1:-1].strip()
+
+    # Оставляем только печатные ASCII-символы, чтобы исключить
+    # скрытые Unicode-байты, которые ломают psycopg2 DSN parsing.
+    cleaned = ''.join(ch for ch in text if 32 <= ord(ch) <= 126)
+    return cleaned or default
+
+
+def _db_config_value(key: str, default: str = '') -> str:
+    # Для DB настроек приоритет у .env файла, чтобы не зависеть
+    # от "залипших" переменных окружения в текущем терминале.
+    if _file_env_config is not None:
+        try:
+            return _file_env_config(key, default=default)
+        except Exception:
+            pass
+    return config(key, default=default)
+
+
+_pg_name = _sanitize_db_value(_db_config_value('POSTGRES_DB', 'postgres'), default='postgres')
+_pg_user = _sanitize_db_value(_db_config_value('POSTGRES_USER', 'postgres'), default='postgres')
+_pg_password = _sanitize_db_value(_db_config_value('POSTGRES_PASSWORD', ''))
+_pg_host = _sanitize_db_value(_db_config_value('POSTGRES_HOST', '127.0.0.1'), default='127.0.0.1')
+_pg_port = _sanitize_db_value(_db_config_value('POSTGRES_PORT', '5432'), default='5432')
+
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': _pg_name,
+        'USER': _pg_user,
+        'PASSWORD': _pg_password,
+        'HOST': _pg_host,
+        'PORT': _pg_port,
+        'OPTIONS': {
+            'connect_timeout': config('DB_CONNECT_TIMEOUT', default=30, cast=int),
+        },
+        'ATOMIC_REQUESTS': False,
+        'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=300, cast=int),
     }
-else:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': config('POSTGRES_DB', default=config('DB_NAME', default='idealimage')),
-            'USER': config('POSTGRES_USER', default=config('DB_USER', default='ideal')),
-            'PASSWORD': config('POSTGRES_PASSWORD', default=config('DB_PASSWORD', default='')),
-            'HOST': config('POSTGRES_HOST', default=config('DB_HOST', default='localhost')),
-            'PORT': config('POSTGRES_PORT', default=config('DB_PORT', default='5432')),
-            'OPTIONS': {
-                'connect_timeout': 10,
-            },
-            'ATOMIC_REQUESTS': False,
-            'CONN_MAX_AGE': config('DB_CONN_MAX_AGE', default=300, cast=int),
-        }
-    }
+}
 
 # Кэширование через Redis (django-redis)
 # На VPS: REDIS_URL=redis://127.0.0.1:6379/0
@@ -648,6 +685,9 @@ INTEGRATION_ALERT_COOLDOWN_MINUTES = config('INTEGRATION_ALERT_COOLDOWN_MINUTES'
 # ============================================================================
 # GIGACHAT API CONFIGURATION
 # ============================================================================
+# Либо задай только GIGACHAT_API_KEY = готовый Base64 из Sber Studio (Ключ авторизации),
+# либо пару: Client_ID (UUID) + GIGACHAT_API_KEY (Client Secret) — код соберёт Base64 сам.
+Client_ID = config('Client_ID', default='')
 GIGACHAT_API_KEY = config('GIGACHAT_API_KEY', default='')
 GIGACHAT_MODEL = config('GIGACHAT_MODEL', default='GigaChat-Max')
 

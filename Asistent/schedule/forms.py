@@ -28,11 +28,11 @@ class AIScheduleForm(forms.ModelForm):
         label='Задержка между генерациями (секунды)',
         initial=2,
         required=False,
-        help_text='Задержка между генерацией каждого гороскопа (по умолчанию 2 сек)',
+        help_text='Задержка между генерацией каждого гороскопа (0–600 сек, по умолчанию 2)',
         widget=forms.NumberInput(attrs={
             'class': 'form-control',
             'min': 0,
-            'max': 60,
+            'max': 600,
             'placeholder': '2'
         })
     )
@@ -259,7 +259,7 @@ class AIScheduleForm(forms.ModelForm):
         # Сохраняем параметры генерации гороскопов (только если указаны)
         generation_delay = cleaned_data.get('generation_delay')
         if generation_delay is not None:
-            payload['generation_delay'] = max(0, min(60, generation_delay))  # Ограничение 0-60 сек
+            payload['generation_delay'] = max(0, min(600, generation_delay))  # Ограничение 0–600 сек
         
         retry_count = cleaned_data.get('retry_count')
         if retry_count is not None:

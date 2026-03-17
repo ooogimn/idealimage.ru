@@ -1,5 +1,36 @@
 **Разработка**
 
+IP
+81.177.136.28
+Порт
+49297
+Логин
+root 
+Lsy05011975
+ssh -p 22 root@81.177.136.28
+ssh -p 49297 root@81.177.136.28
+Lsy05011975
+cd /var/www/idealimage
+source .venv/bin/activate
+git pull origin main
+### копируем media из локального проекта на сервер  (!!!!!!)
+scp -P 22 -r "/f/PROGER/SAITS_MAY/SERVERA/IDEALIMAGE/idealimage.ru/media/." root@81.177.136.28:/var/www/idealimage.ru/media/
+
+### копируем static из локального проекта на сервер (!!!!!!)    
+scp -P 22 -r "/f/PROGER/SAITS_MAY/SERVERA/IDEALIMAGE/idealimage.ru/staticfiles/." root@81.177.136.28:/var/www/idealimage.ru/staticfiles/
+
+vi /var/www/idealimage.ru/.env
+Как править в vi:
+
+Нажми i (режим вставки).
+Дойди до нужного места стрелками и вставь/допиши строки.
+Нажми Esc, затем введи :wq и Enter (сохранить и выйти).
+Только выйти без сохранения: Esc, потом :q! и Enter.
+Если хочешь поставить nano и потом им открыть:
+
+
+apt-get update && apt-get install -y nano && nano /var/www/idealimage.ru/.env
+
 ```bash
 ### upgrade pip 
 python.exe -m pip install --upgrade pip

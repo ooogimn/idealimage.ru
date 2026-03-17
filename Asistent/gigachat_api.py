@@ -1,7 +1,10 @@
 """
 Интеграция с GigaChat API
-Использует официальный SDK от Сбера
+Использует официальный SDK от Сбера.
+Авторизация: в личном кабинете Sber Studio выдают Base64(Client_ID:Client_Secret).
+В .env можно задать либо готовый ключ (GIGACHAT_API_KEY), либо пару Client_ID + GIGACHAT_API_KEY (как секрет) — тогда ключ соберётся автоматически.
 """
+import base64
 import os
 import json
 import logging
@@ -147,11 +150,33 @@ def rate_limit_retry(max_retries=3, base_delay=5):
     return decorator
 
 
+def _normalize_gigachat_credentials():
+    """
+    Возвращает credentials для GigaChat SDK: Base64(Client_ID:Client_Secret).
+    Вариант 1: в .env только GIGACHAT_API_KEY = готовая строка из кабинета Sber Studio (Ключ авторизации).
+    Вариант 2: в .env заданы Client_ID и GIGACHAT_API_KEY (как Client Secret) — собираем Base64 здесь.
+    """
+    api_key = (getattr(settings, 'GIGACHAT_API_KEY', None) or os.getenv('GIGACHAT_API_KEY') or '').strip()
+    client_id = (getattr(settings, 'Client_ID', None) or os.getenv('Client_ID') or '').strip()
+    if client_id and api_key:
+        # Явно задана пара — собираем Base64(Client_ID:Client_Secret)
+        raw = f"{client_id}:{api_key}"
+        creds = base64.b64encode(raw.encode('utf-8')).decode('ascii')
+        logger.info("GigaChat: credentials собраны из Client_ID + GIGACHAT_API_KEY (Base64)")
+        return creds
+    if api_key and not client_id:
+        logger.warning(
+            "GigaChat: задан только GIGACHAT_API_KEY. Если это Client Secret — добавь в .env Client_ID=... (UUID из Sber Studio)"
+        )
+    return api_key
+
+
 """Клиент для работы с GigaChat API"""
 class GigaChatClient:
     
     """Инициализация клиента"""
     def __init__(self):
+        self._credentials = _normalize_gigachat_credentials()
         self.api_key = getattr(settings, 'GIGACHAT_API_KEY', os.getenv('GIGACHAT_API_KEY'))
         self.model = getattr(settings, 'GIGACHAT_MODEL', 'GigaChat')
         self.client = None
@@ -161,8 +186,12 @@ class GigaChatClient:
     def _initialize_client(self):
         try:
             from gigachat import GigaChat
+            if not self._credentials:
+                logger.error("GigaChat: не заданы credentials (GIGACHAT_API_KEY или пара Client_ID + GIGACHAT_API_KEY)")
+                self.client = None
+                return
             self.client = GigaChat(
-                credentials=self.api_key,
+                credentials=self._credentials,
                 model=self.model,  # Указываем модель при создании клиента
                 verify_ssl_certs=False,
                 scope="GIGACHAT_API_PERS"

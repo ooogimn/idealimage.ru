@@ -7,6 +7,8 @@ PromptTemplateVersion - История изменений шаблонов
 from django.db import models
 from django.contrib.auth.models import User
 
+from Asistent.template_variables import extract_from_template_fields
+
 
 class PromptTemplate(models.Model):
     """Шаблоны промптов для AI"""
@@ -127,6 +129,28 @@ class PromptTemplate(models.Model):
     
     def __str__(self):
         return f"{self.name} ({self.get_category_display()})"
+
+    def get_template_variables(self):
+        """
+        Список динамических переменных, используемых в шаблоне.
+
+        Сканирует поля: template, title_criteria, image_search_criteria,
+        image_generation_criteria, tags_criteria, debug_script.
+        Объединяет с полем variables (JSON), если там заданы дополнительные имена.
+
+        Returns:
+            list[str]: Отсортированный список уникальных имён переменных.
+        """
+        extracted = extract_from_template_fields(
+            template_text=getattr(self, 'template', None) or '',
+            title_criteria=getattr(self, 'title_criteria', None) or '',
+            image_search_criteria=getattr(self, 'image_search_criteria', None) or '',
+            image_generation_criteria=getattr(self, 'image_generation_criteria', None) or '',
+            tags_criteria=getattr(self, 'tags_criteria', None) or '',
+            debug_script=getattr(self, 'debug_script', None) or '',
+        )
+        declared = list(self.variables) if isinstance(self.variables, list) else []
+        return sorted(set(extracted) | set(declared))
 
 
 class PromptTemplateVersion(models.Model):

@@ -7,6 +7,15 @@
 <!-- Админ навигация -->
 {% include 'partials/admin_navigation.html' %}
 
+{% if tables_missing %}
+<div class="max-w-4xl mx-auto px-4 py-8">
+    <div class="bg-amber-500/20 border border-amber-500/50 rounded-xl p-6 text-amber-100">
+        <h2 class="text-xl font-semibold mb-2">Таблицы расписаний не созданы</h2>
+        <p class="mb-4">В базе данных отсутствуют таблицы <code class="bg-black/30 px-1 rounded">Asistent_aischedule</code> и <code class="bg-black/30 px-1 rounded">Asistent_aischedulerun</code>. Выполните миграции приложения расписаний.</p>
+        <p class="font-mono text-sm bg-black/30 p-3 rounded">python manage.py makemigrations schedule<br>python manage.py migrate</p>
+    </div>
+</div>
+{% else %}
 <div class="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900 py-8">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
@@ -92,4 +101,5 @@
         
     </div>
 </div>
+{% endif %}
 {% endblock %}

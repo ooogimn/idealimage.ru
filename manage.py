@@ -3,25 +3,6 @@
 import os
 import sys
 
-# PyMySQL как замена mysqlclient — до запуска Django
-# Читаем .env вручную, так как decouple ещё не загружен
-_env_file = os.path.join(os.path.dirname(__file__), '.env')
-_db_engine = 'postgresql'
-if os.path.exists(_env_file):
-    with open(_env_file) as _f:
-        for _line in _f:
-            _line = _line.strip()
-            if _line.startswith('DB_ENGINE='):
-                _db_engine = _line.split('=', 1)[1].strip()
-                break
-
-if _db_engine == 'mysql':
-    try:
-        import pymysql
-        pymysql.install_as_MySQLdb()
-    except ImportError:
-        pass
-
 
 def main():
     """Run administrative tasks."""

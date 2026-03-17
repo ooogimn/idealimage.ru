@@ -34,11 +34,18 @@ class Command(BaseCommand):
             type=int,
             help='ID промпт-шаблона (по умолчанию: DAILY_HOROSCOPE_PROMPT)'
         )
+        parser.add_argument(
+            '--limit',
+            type=int,
+            default=None,
+            help='Максимум знаков для генерации (для теста: --limit=1)'
+        )
 
     def handle(self, *args, **options):
         dry_run = options.get('dry_run', False)
         delay = options.get('delay', 5)
         template_id = options.get('template_id')
+        limit = options.get('limit')
         
         self.stdout.write(self.style.SUCCESS('=' * 70))
         self.stdout.write(self.style.SUCCESS('  🔮 ГЕНЕРАЦИЯ И ПУБЛИКАЦИЯ ВСЕХ ГОРОСКОПОВ'))
@@ -82,9 +89,12 @@ class Command(BaseCommand):
             config = GeneratorConfig.for_auto()  # Автоматическая публикация
             config.preview_only = False  # Публикуем сразу
         
+        # Ограничиваем количество знаков при --limit
+        signs_to_run = ZODIAC_SIGNS[:limit] if limit else ZODIAC_SIGNS
+        
         # Статистика
         results = {
-            'total': len(ZODIAC_SIGNS),
+            'total': len(signs_to_run),
             'success': 0,
             'failed': 0,
             'posts': [],
@@ -98,7 +108,7 @@ class Command(BaseCommand):
         self.stdout.write('')
         
         # Генерируем гороскопы для каждого знака
-        for i, zodiac_sign in enumerate(ZODIAC_SIGNS, 1):
+        for i, zodiac_sign in enumerate(signs_to_run, 1):
             self.stdout.write(self.style.SUCCESS(
                 f'[{i}/{results["total"]}] 🔮 Генерация гороскопа для {zodiac_sign}...'
             ))

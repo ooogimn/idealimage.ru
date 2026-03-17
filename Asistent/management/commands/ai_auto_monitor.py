@@ -40,11 +40,11 @@ class Command(BaseCommand):
                 return self._run_monitor(verbose=verbose)
             except OperationalError as exc:
                 last_error = exc
-                if not self._is_mysql_gone_error(exc):
+                if not self._is_transient_db_error(exc):
                     raise
                 self.stdout.write(
                     self.style.WARNING(
-                        f"[retry {attempt}/{retries}] MySQL разорвал соединение, пробую переподключиться..."
+                        f"[retry {attempt}/{retries}] Временный сбой БД, пробую переподключиться..."
                     )
                 )
                 connections.close_all()
@@ -318,7 +318,18 @@ class Command(BaseCommand):
         self.stdout.write(f'[INFO] Следующий запуск: через 1 час (настройте через cron)')
 
     @staticmethod
-    def _is_mysql_gone_error(exc: OperationalError) -> bool:
-        code = exc.args[0] if exc.args else None
-        return code == 2006 or "MySQL server has gone away" in str(exc)
+    def _is_transient_db_error(exc: OperationalError) -> bool:
+        message = str(exc).lower()
+        # PostgreSQL transient transport/auth channel issues.
+        # We retry only for temporary failures, not for schema/data errors.
+        transient_markers = (
+            "server closed the connection unexpectedly",
+            "connection reset by peer",
+            "could not connect to server",
+            "connection refused",
+            "terminating connection due to administrator command",
+            "ssl syscall error",
+            "timeout expired",
+        )
+        return any(marker in message for marker in transient_markers)
 

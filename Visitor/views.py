@@ -949,282 +949,285 @@ class SuperuserDashboardView(LoginRequiredMixin, TemplateView):
             # Получаем всех пользователей, у которых есть хотя бы одна статья
             authors_with_posts = User.objects.filter(
                 author_posts__isnull=False
-            ).distinct()
-        
-        # 4 набора статистики
-        authors_stats_all_time = []
-        authors_stats_last_month = []
-        authors_stats_current_month = []
-        authors_stats_dynamics = []
-        
-        for author in authors_with_posts:
-            # Проверяем наличие профиля
-            if not hasattr(author, 'profile'):
-                continue
+            ).distinct().select_related('profile')
             
-            author_profile = author.profile
+            # 4 набора статистики
+            authors_stats_all_time = []
+            authors_stats_last_month = []
+            authors_stats_current_month = []
+            authors_stats_dynamics = []
             
-            # За всё время
-            all_time = self._get_period_stats(author)
-            authors_stats_all_time.append({
-                'author': author,
-                'profile': author_profile,
-                'posts_count': all_time['posts_count'],
-                'views_count': all_time['views_count'],
-                'likes_count': all_time['likes_count'],
-                'comments_count': all_time['comments_count'],
-                'total_donations': all_time['total_donations'],
-                'subscribers_count': all_time['subscribers_count'],
-                'bonus': author_profile.total_bonus,
-                'is_ai': author.username == 'ai_assistant',
-            })
+            for author in authors_with_posts:
+                # Проверяем наличие профиля
+                if not hasattr(author, 'profile'):
+                    continue
+                
+                author_profile = author.profile
+                
+                # За всё время
+                all_time = self._get_period_stats(author)
+                authors_stats_all_time.append({
+                    'author': author,
+                    'profile': author_profile,
+                    'posts_count': all_time['posts_count'],
+                    'views_count': all_time['views_count'],
+                    'likes_count': all_time['likes_count'],
+                    'comments_count': all_time['comments_count'],
+                    'total_donations': all_time['total_donations'],
+                    'subscribers_count': all_time['subscribers_count'],
+                    'bonus': author_profile.total_bonus,
+                    'is_ai': author.username == 'ai_assistant',
+                })
+                
+                # За прошлый месяц
+                last_month = self._get_period_stats(author, last_month_start, last_month_end)
+                authors_stats_last_month.append({
+                    'author': author,
+                    'profile': author_profile,
+                    'posts_count': last_month['posts_count'],
+                    'views_count': last_month['views_count'],
+                    'likes_count': last_month['likes_count'],
+                    'comments_count': last_month['comments_count'],
+                    'total_donations': last_month['total_donations'],
+                    'subscribers_count': last_month['subscribers_count'],
+                    'bonus': author_profile.total_bonus,
+                    'is_ai': author.username == 'ai_assistant',
+                })
+                
+                # За текущий месяц
+                current_month = self._get_period_stats(author, current_month_start, current_month_end)
+                authors_stats_current_month.append({
+                    'author': author,
+                    'profile': author_profile,
+                    'posts_count': current_month['posts_count'],
+                    'views_count': current_month['views_count'],
+                    'likes_count': current_month['likes_count'],
+                    'comments_count': current_month['comments_count'],
+                    'total_donations': current_month['total_donations'],
+                    'subscribers_count': current_month['subscribers_count'],
+                    'bonus': author_profile.total_bonus,
+                    'is_ai': author.username == 'ai_assistant',
+                })
+                
+                # Динамика (разница между текущим и прошлым месяцем)
+                authors_stats_dynamics.append({
+                    'author': author,
+                    'profile': author_profile,
+                    'posts_diff': current_month['posts_count'] - last_month['posts_count'],
+                    'views_diff': current_month['views_count'] - last_month['views_count'],
+                    'likes_diff': current_month['likes_count'] - last_month['likes_count'],
+                    'comments_diff': current_month['comments_count'] - last_month['comments_count'],
+                    'donations_diff': current_month['total_donations'] - last_month['total_donations'],
+                    'subscribers_diff': current_month['subscribers_count'] - last_month['subscribers_count'],
+                    'bonus': author_profile.total_bonus,
+                    'is_ai': author.username == 'ai_assistant',
+                })
             
-            # За прошлый месяц
-            last_month = self._get_period_stats(author, last_month_start, last_month_end)
-            authors_stats_last_month.append({
-                'author': author,
-                'profile': author_profile,
-                'posts_count': last_month['posts_count'],
-                'views_count': last_month['views_count'],
-                'likes_count': last_month['likes_count'],
-                'comments_count': last_month['comments_count'],
-                'total_donations': last_month['total_donations'],
-                'subscribers_count': last_month['subscribers_count'],
-                'bonus': author_profile.total_bonus,
-                'is_ai': author.username == 'ai_assistant',
-            })
+            # Сортируем по количеству статей (сначала самые активные)
+            authors_stats_all_time = sorted(authors_stats_all_time, key=lambda x: x['posts_count'], reverse=True)
+            authors_stats_last_month = sorted(authors_stats_last_month, key=lambda x: x['posts_count'], reverse=True)
+            authors_stats_current_month = sorted(authors_stats_current_month, key=lambda x: x['posts_count'], reverse=True)
+            authors_stats_dynamics = sorted(authors_stats_dynamics, key=lambda x: x['posts_diff'], reverse=True)
             
-            # За текущий месяц
-            current_month = self._get_period_stats(author, current_month_start, current_month_end)
-            authors_stats_current_month.append({
-                'author': author,
-                'profile': author_profile,
-                'posts_count': current_month['posts_count'],
-                'views_count': current_month['views_count'],
-                'likes_count': current_month['likes_count'],
-                'comments_count': current_month['comments_count'],
-                'total_donations': current_month['total_donations'],
-                'subscribers_count': current_month['subscribers_count'],
-                'bonus': author_profile.total_bonus,
-                'is_ai': author.username == 'ai_assistant',
-            })
+            # Пагинация
+            from django.core.paginator import Paginator
+            per_page = int(self.request.GET.get('per_page', 20))
+            if per_page not in [10, 20, 50, 100]:
+                per_page = 20
             
-            # Динамика (разница между текущим и прошлым месяцем)
-            authors_stats_dynamics.append({
-                'author': author,
-                'profile': author_profile,
-                'posts_diff': current_month['posts_count'] - last_month['posts_count'],
-                'views_diff': current_month['views_count'] - last_month['views_count'],
-                'likes_diff': current_month['likes_count'] - last_month['likes_count'],
-                'comments_diff': current_month['comments_count'] - last_month['comments_count'],
-                'donations_diff': current_month['total_donations'] - last_month['total_donations'],
-                'subscribers_diff': current_month['subscribers_count'] - last_month['subscribers_count'],
-                'bonus': author_profile.total_bonus,
-                'is_ai': author.username == 'ai_assistant',
-            })
-        
-        # Сортируем по количеству статей (сначала самые активные)
-        authors_stats_all_time = sorted(authors_stats_all_time, key=lambda x: x['posts_count'], reverse=True)
-        authors_stats_last_month = sorted(authors_stats_last_month, key=lambda x: x['posts_count'], reverse=True)
-        authors_stats_current_month = sorted(authors_stats_current_month, key=lambda x: x['posts_count'], reverse=True)
-        authors_stats_dynamics = sorted(authors_stats_dynamics, key=lambda x: x['posts_diff'], reverse=True)
-        
-        # Пагинация
-        from django.core.paginator import Paginator
-        per_page = int(self.request.GET.get('per_page', 20))
-        if per_page not in [10, 20, 50, 100]:
-            per_page = 20
-        
-        page_number = self.request.GET.get('page', 1)
-        
-        paginator_all_time = Paginator(authors_stats_all_time, per_page)
-        paginator_last_month = Paginator(authors_stats_last_month, per_page)
-        paginator_current_month = Paginator(authors_stats_current_month, per_page)
-        paginator_dynamics = Paginator(authors_stats_dynamics, per_page)
-        
-        page_all_time = paginator_all_time.get_page(page_number)
-        page_last_month = paginator_last_month.get_page(page_number)
-        page_current_month = paginator_current_month.get_page(page_number)
-        page_dynamics = paginator_dynamics.get_page(page_number)
-        
-        # Подсчитываем общие суммы для каждого периода
-        context['authors_totals_all_time'] = {
-            'posts': sum(stat['posts_count'] for stat in authors_stats_all_time),
-            'views': sum(stat['views_count'] for stat in authors_stats_all_time),
-            'likes': sum(stat['likes_count'] for stat in authors_stats_all_time),
-            'donations': sum(stat['total_donations'] for stat in authors_stats_all_time),
-            'comments': sum(stat['comments_count'] for stat in authors_stats_all_time),
-            'subscribers': sum(stat['subscribers_count'] for stat in authors_stats_all_time),
-        }
-        
-        context['authors_totals_last_month'] = {
-            'posts': sum(stat['posts_count'] for stat in authors_stats_last_month),
-            'views': sum(stat['views_count'] for stat in authors_stats_last_month),
-            'likes': sum(stat['likes_count'] for stat in authors_stats_last_month),
-            'donations': sum(stat['total_donations'] for stat in authors_stats_last_month),
-            'comments': sum(stat['comments_count'] for stat in authors_stats_last_month),
-            'subscribers': sum(stat['subscribers_count'] for stat in authors_stats_last_month),
-        }
-        
-        context['authors_totals_current_month'] = {
-            'posts': sum(stat['posts_count'] for stat in authors_stats_current_month),
-            'views': sum(stat['views_count'] for stat in authors_stats_current_month),
-            'likes': sum(stat['likes_count'] for stat in authors_stats_current_month),
-            'donations': sum(stat['total_donations'] for stat in authors_stats_current_month),
-            'comments': sum(stat['comments_count'] for stat in authors_stats_current_month),
-            'subscribers': sum(stat['subscribers_count'] for stat in authors_stats_current_month),
-        }
-        
-        context['authors_totals_dynamics'] = {
-            'posts': sum(stat['posts_diff'] for stat in authors_stats_dynamics),
-            'views': sum(stat['views_diff'] for stat in authors_stats_dynamics),
-            'likes': sum(stat['likes_diff'] for stat in authors_stats_dynamics),
-            'donations': sum(stat['donations_diff'] for stat in authors_stats_dynamics),
-            'comments': sum(stat['comments_diff'] for stat in authors_stats_dynamics),
-            'subscribers': sum(stat['subscribers_diff'] for stat in authors_stats_dynamics),
-        }
-        
-        # Пагинированные данные
-        context['page_all_time'] = page_all_time
-        context['page_last_month'] = page_last_month
-        context['page_current_month'] = page_current_month
-        context['page_dynamics'] = page_dynamics
-        
-        context['total_authors'] = len(authors_stats_all_time)
-        context['per_page'] = per_page
-        
-        # Обратная совместимость (для других частей шаблона)
-        context['authors_stats'] = page_all_time.object_list
-        context['authors_totals'] = context['authors_totals_all_time']
-        
-        # Общая статистика
-        context['total_users'] = User.objects.count()
-        context['total_posts'] = Post.objects.count()
-        context['total_comments'] = Comment.objects.count()
-        context['total_donations'] = Donation.objects.aggregate(total=Sum('amount'))['total'] or 0
-        
-        # ========================================
-        # AI-АССИСТЕНТ: Интеграция функционала
-        # ========================================
-        try:
-            from Asistent.models import (
-                ContentTask, AISchedule, ModerationCriteria, ModerationLog, 
-                AIGeneratedArticle, CommentModerationCriteria, CommentModerationLog,
-                TaskAssignment, AIConversation, AITask
-            )
+            page_number = self.request.GET.get('page', 1)
             
-            # Критерии модерации (новая упрощённая система)
-            from Asistent.moderations.models import ArticleModerationSettings, CommentModerationSettings, ModerationLog as NewModerationLog
+            paginator_all_time = Paginator(authors_stats_all_time, per_page)
+            paginator_last_month = Paginator(authors_stats_last_month, per_page)
+            paginator_current_month = Paginator(authors_stats_current_month, per_page)
+            paginator_dynamics = Paginator(authors_stats_dynamics, per_page)
             
-            context['article_criteria'] = ArticleModerationSettings.objects.all().order_by('-updated_at')
-            context['comment_criteria'] = CommentModerationSettings.objects.all().order_by('-updated_at')
+            page_all_time = paginator_all_time.get_page(page_number)
+            page_last_month = paginator_last_month.get_page(page_number)
+            page_current_month = paginator_current_month.get_page(page_number)
+            page_dynamics = paginator_dynamics.get_page(page_number)
             
-            # Статистика модерации (упрощённая)
-            context['comment_moderation_stats'] = {
-                'total': NewModerationLog.objects.filter(content_type='comment').count(),
-                'passed': NewModerationLog.objects.filter(content_type='comment', passed=True).count(),
-                'blocked': NewModerationLog.objects.filter(content_type='comment', passed=False).count(),
+            # Подсчитываем общие суммы для каждого периода
+            context['authors_totals_all_time'] = {
+                'posts': sum(stat['posts_count'] for stat in authors_stats_all_time),
+                'views': sum(stat['views_count'] for stat in authors_stats_all_time),
+                'likes': sum(stat['likes_count'] for stat in authors_stats_all_time),
+                'donations': sum(stat['total_donations'] for stat in authors_stats_all_time),
+                'comments': sum(stat['comments_count'] for stat in authors_stats_all_time),
+                'subscribers': sum(stat['subscribers_count'] for stat in authors_stats_all_time),
             }
             
-            # Статистика заданий для авторов
-            context['tasks_stats'] = {
-                'total': ContentTask.objects.exclude(status='cancelled').count(),
-                'in_progress': TaskAssignment.objects.filter(status='in_progress').count(),
-                'authors_count': TaskAssignment.objects.filter(status='in_progress').values('author').distinct().count(),
-                'completed': TaskAssignment.objects.filter(status='approved').count(),
+            context['authors_totals_last_month'] = {
+                'posts': sum(stat['posts_count'] for stat in authors_stats_last_month),
+                'views': sum(stat['views_count'] for stat in authors_stats_last_month),
+                'likes': sum(stat['likes_count'] for stat in authors_stats_last_month),
+                'donations': sum(stat['total_donations'] for stat in authors_stats_last_month),
+                'comments': sum(stat['comments_count'] for stat in authors_stats_last_month),
+                'subscribers': sum(stat['subscribers_count'] for stat in authors_stats_last_month),
             }
             
-            # Задания на AI проверке
-            context['tasks_for_review'] = TaskAssignment.objects.filter(
-                status='completed'
-            ).select_related('author__profile', 'article', 'task').order_by('-submitted_at')[:10]
+            context['authors_totals_current_month'] = {
+                'posts': sum(stat['posts_count'] for stat in authors_stats_current_month),
+                'views': sum(stat['views_count'] for stat in authors_stats_current_month),
+                'likes': sum(stat['likes_count'] for stat in authors_stats_current_month),
+                'donations': sum(stat['total_donations'] for stat in authors_stats_current_month),
+                'comments': sum(stat['comments_count'] for stat in authors_stats_current_month),
+                'subscribers': sum(stat['subscribers_count'] for stat in authors_stats_current_month),
+            }
             
-            # Просроченные задания
-            context['overdue_tasks'] = ContentTask.objects.filter(
-                deadline__lt=timezone.now(),
-                status__in=['available', 'active']
-            ).order_by('deadline')
+            context['authors_totals_dynamics'] = {
+                'posts': sum(stat['posts_diff'] for stat in authors_stats_dynamics),
+                'views': sum(stat['views_diff'] for stat in authors_stats_dynamics),
+                'likes': sum(stat['likes_diff'] for stat in authors_stats_dynamics),
+                'donations': sum(stat['donations_diff'] for stat in authors_stats_dynamics),
+                'comments': sum(stat['comments_diff'] for stat in authors_stats_dynamics),
+                'subscribers': sum(stat['subscribers_diff'] for stat in authors_stats_dynamics),
+            }
             
-            # Активные расписания AI
-            context['ai_schedules'] = AISchedule.objects.filter(
-                is_active=True
-            ).select_related('category').order_by('-created_at')
+            # Пагинированные данные
+            context['page_all_time'] = page_all_time
+            context['page_last_month'] = page_last_month
+            context['page_current_month'] = page_current_month
+            context['page_dynamics'] = page_dynamics
             
-            # Критерии модерации (упрощённая система)
-            from Asistent.moderations.models import ArticleModerationSettings
-            context['moderation_criteria'] = ArticleModerationSettings.objects.filter(
-                is_active=True
-            ).first()
+            context['total_authors'] = len(authors_stats_all_time)
+            context['per_page'] = per_page
             
-            # Статистика AI-Ассистента
-            context['ai_stats'] = {
-                'total_tasks': ContentTask.objects.exclude(status='cancelled').count(),
-                'available_tasks': ContentTask.objects.filter(status='available').count(),
-                'tasks_in_progress': TaskAssignment.objects.filter(status='in_progress').count(),
-                'tasks_for_review': TaskAssignment.objects.filter(status='completed').count(),
-                'completed_tasks': TaskAssignment.objects.filter(status='approved').count(),
-                'overdue_tasks': ContentTask.objects.filter(
+            # Обратная совместимость (для других частей шаблона)
+            context['authors_stats'] = page_all_time.object_list
+            context['authors_totals'] = context['authors_totals_all_time']
+            
+            # Общая статистика
+            context['total_users'] = User.objects.count()
+            context['total_posts'] = Post.objects.count()
+            context['total_comments'] = Comment.objects.count()
+            context['total_donations'] = Donation.objects.aggregate(total=Sum('amount'))['total'] or 0
+            
+            # ========================================
+            # AI-АССИСТЕНТ: Интеграция функционала
+            # ========================================
+            try:
+                # noqa: optional Asistent app
+                from Asistent.models import (
+                    ContentTask, AISchedule, ModerationCriteria, ModerationLog,
+                    AIGeneratedArticle, CommentModerationCriteria, CommentModerationLog,
+                    TaskAssignment, AIConversation, AITask
+                )
+
+                # Критерии модерации (новая упрощённая система)
+                from Asistent.moderations.models import ArticleModerationSettings, CommentModerationSettings, ModerationLog as NewModerationLog
+
+                context['article_criteria'] = ArticleModerationSettings.objects.all().order_by('-updated_at')
+                context['comment_criteria'] = CommentModerationSettings.objects.all().order_by('-updated_at')
+                
+                # Статистика модерации (упрощённая)
+                context['comment_moderation_stats'] = {
+                    'total': NewModerationLog.objects.filter(content_type='comment').count(),
+                    'passed': NewModerationLog.objects.filter(content_type='comment', passed=True).count(),
+                    'blocked': NewModerationLog.objects.filter(content_type='comment', passed=False).count(),
+                }
+                
+                # Статистика заданий для авторов
+                context['tasks_stats'] = {
+                    'total': ContentTask.objects.exclude(status='cancelled').count(),
+                    'in_progress': TaskAssignment.objects.filter(status='in_progress').count(),
+                    'authors_count': TaskAssignment.objects.filter(status='in_progress').values('author').distinct().count(),
+                    'completed': TaskAssignment.objects.filter(status='approved').count(),
+                }
+                
+                # Задания на AI проверке
+                context['tasks_for_review'] = TaskAssignment.objects.filter(
+                    status='completed'
+                ).select_related('author__profile', 'article', 'task').order_by('-submitted_at')[:10]
+                
+                # Просроченные задания
+                context['overdue_tasks'] = ContentTask.objects.filter(
                     deadline__lt=timezone.now(),
                     status__in=['available', 'active']
-                ).count(),
-                'active_schedules': AISchedule.objects.filter(is_active=True).count(),
-                'ai_articles_total': AIGeneratedArticle.objects.count(),
-                'ai_articles_today': AIGeneratedArticle.objects.filter(
-                    created_at__date=timezone.now().date()
-                ).count(),
-                'moderation_logs_today': ModerationLog.objects.filter(
-                    created_at__date=timezone.now().date()
-                ).count(),
-                # Новая статистика для AI-чата
-                'generated_articles': AIGeneratedArticle.objects.count(),
-                'chat_conversations': AIConversation.objects.count(),
-            }
+                ).order_by('deadline')
+                
+                # Активные расписания AI
+                context['ai_schedules'] = AISchedule.objects.filter(
+                    is_active=True
+                ).select_related('category').order_by('-created_at')
+                
+                # Критерии модерации (упрощённая система)
+                from Asistent.moderations.models import ArticleModerationSettings
+                context['moderation_criteria'] = ArticleModerationSettings.objects.filter(
+                    is_active=True
+                ).first()
+                
+                # Статистика AI-Ассистента
+                context['ai_stats'] = {
+                    'total_tasks': ContentTask.objects.exclude(status='cancelled').count(),
+                    'available_tasks': ContentTask.objects.filter(status='available').count(),
+                    'tasks_in_progress': TaskAssignment.objects.filter(status='in_progress').count(),
+                    'tasks_for_review': TaskAssignment.objects.filter(status='completed').count(),
+                    'completed_tasks': TaskAssignment.objects.filter(status='approved').count(),
+                    'overdue_tasks': ContentTask.objects.filter(
+                        deadline__lt=timezone.now(),
+                        status__in=['available', 'active']
+                    ).count(),
+                    'active_schedules': AISchedule.objects.filter(is_active=True).count(),
+                    'ai_articles_total': AIGeneratedArticle.objects.count(),
+                    'ai_articles_today': AIGeneratedArticle.objects.filter(
+                        created_at__date=timezone.now().date()
+                    ).count(),
+                    'moderation_logs_today': ModerationLog.objects.filter(
+                        created_at__date=timezone.now().date()
+                    ).count(),
+                    'generated_articles': AIGeneratedArticle.objects.count(),
+                    'chat_conversations': AIConversation.objects.count(),
+                }
+                
+                # Последние AI-статьи
+                context['recent_ai_articles'] = AIGeneratedArticle.objects.select_related(
+                    'article', 'schedule'
+                ).order_by('-created_at')[:5]
+                
+                # Последние логи модерации
+                context['recent_moderation_logs'] = ModerationLog.objects.select_related(
+                    'article', 'criteria'
+                ).order_by('-created_at')[:10]
+                
+                context['ai_enabled'] = True
             
-            # Последние AI-статьи
-            context['recent_ai_articles'] = AIGeneratedArticle.objects.select_related(
-                'article', 'schedule'
-            ).order_by('-created_at')[:5]
-            
-            # Последние логи модерации
-            context['recent_moderation_logs'] = ModerationLog.objects.select_related(
-                'article', 'criteria'
-            ).order_by('-created_at')[:10]
-            
-            context['ai_enabled'] = True
-            
-        except ImportError:
-            # Если Asistent не установлен
-            context['ai_enabled'] = False
-            context['ai_stats'] = {}
+            except ImportError:
+                # Если Asistent не установлен
+                context['ai_enabled'] = False
+                context['ai_stats'] = {}
+            except Exception as e:
+                logger.exception('SuperuserDashboardView get_context_data failed: %s', e)
+                empty_page = Paginator([], 20).get_page(1)
+                zero_totals = {'posts': 0, 'views': 0, 'likes': 0, 'donations': 0, 'comments': 0, 'subscribers': 0}
+                context.setdefault('pending_applications', [])
+                context.setdefault('recent_activities', [])
+                context.setdefault('page_all_time', empty_page)
+                context.setdefault('page_last_month', empty_page)
+                context.setdefault('page_current_month', empty_page)
+                context.setdefault('page_dynamics', empty_page)
+                context.setdefault('authors_totals_all_time', zero_totals)
+                context.setdefault('authors_totals_last_month', zero_totals)
+                context.setdefault('authors_totals_current_month', zero_totals)
+                context.setdefault('authors_totals_dynamics', zero_totals)
+                context.setdefault('total_authors', 0)
+                context.setdefault('per_page', 20)
+                context.setdefault('authors_stats', [])
+                context.setdefault('authors_totals', zero_totals)
+                context.setdefault('total_users', 0)
+                context.setdefault('total_posts', 0)
+                context.setdefault('total_comments', 0)
+                context.setdefault('total_donations', 0)
+                context.setdefault('ai_enabled', False)
+                context.setdefault('ai_stats', {})
+                context.setdefault('tasks_stats', {})
+                context.setdefault('tasks_for_review', [])
+                context.setdefault('overdue_tasks', [])
+                context.setdefault('ai_schedules', [])
+
         except Exception as e:
             logger.exception('SuperuserDashboardView get_context_data failed: %s', e)
-            empty_page = Paginator([], 20).get_page(1)
-            zero_totals = {'posts': 0, 'views': 0, 'likes': 0, 'donations': 0, 'comments': 0, 'subscribers': 0}
-            context.setdefault('pending_applications', [])
-            context.setdefault('recent_activities', [])
-            context.setdefault('page_all_time', empty_page)
-            context.setdefault('page_last_month', empty_page)
-            context.setdefault('page_current_month', empty_page)
-            context.setdefault('page_dynamics', empty_page)
-            context.setdefault('authors_totals_all_time', zero_totals)
-            context.setdefault('authors_totals_last_month', zero_totals)
-            context.setdefault('authors_totals_current_month', zero_totals)
-            context.setdefault('authors_totals_dynamics', zero_totals)
-            context.setdefault('total_authors', 0)
-            context.setdefault('per_page', 20)
-            context.setdefault('authors_stats', [])
-            context.setdefault('authors_totals', zero_totals)
-            context.setdefault('total_users', 0)
-            context.setdefault('total_posts', 0)
-            context.setdefault('total_comments', 0)
-            context.setdefault('total_donations', 0)
-            context.setdefault('ai_enabled', False)
-            context.setdefault('ai_stats', {})
-            context.setdefault('tasks_stats', {})
-            context.setdefault('tasks_for_review', [])
-            context.setdefault('overdue_tasks', [])
-            context.setdefault('ai_schedules', [])
-        
+
         return context
 
 """ Представление для просмотра должностной инструкции для роли  """

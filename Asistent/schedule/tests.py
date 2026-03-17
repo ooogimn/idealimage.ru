@@ -71,7 +71,7 @@ class AIScheduleFormTests(TestCase):
             'articles_per_run': 1,
             'min_word_count': 500,
             'max_word_count': 1000,
-            'generation_delay': 100,  # Превышает лимит 60
+            'generation_delay': 700,  # Превышает лимит 600
             'retry_count': 10,  # Превышает лимит 5
             'retry_delay': 200,  # Превышает лимит 120
             'is_active': True,
@@ -81,8 +81,8 @@ class AIScheduleFormTests(TestCase):
         self.assertTrue(form.is_valid())
         
         schedule = form.save()
-        # Проверяем, что значения ограничены
-        self.assertEqual(schedule.payload_template.get('generation_delay'), 60)
+        # Проверяем, что значения ограничены (generation_delay до 600)
+        self.assertEqual(schedule.payload_template.get('generation_delay'), 600)
         self.assertEqual(schedule.payload_template.get('retry_count'), 5)
         self.assertEqual(schedule.payload_template.get('retry_delay'), 120)
     

@@ -1,7 +1,11 @@
 """
 Упрощенные сервисы для генерации контента
 БЕЗ автоматического определения модели - всегда GigaChat для текста
+
+ТЗ №3 (Фаза B): валидация длины спаршенного текста (min 300 символов),
+очистка от HTML/мусора перед отправкой в GigaChat, fallback на следующий источник.
 """
+import re
 import logging
 from typing import Dict, List, Optional, Tuple
 from django.utils.html import strip_tags
@@ -10,6 +14,11 @@ from Asistent.gigachat_api import get_gigachat_client, RateLimitCooldown
 from Asistent.Test_Promot.test_prompt import render_template_text, GIGACHAT_TIMEOUT_ARTICLE, GIGACHAT_TIMEOUT_TITLE
 
 logger = logging.getLogger(__name__)
+
+# Минимум символов спаршенного текста для рерайта (иначе следующий URL или полная генерация)
+MIN_PARSED_LENGTH = 300
+# Максимум символов спаршенного текста в промпте (экономия токенов)
+MAX_PARSED_TEXT_FOR_PROMPT = 8000
 
 
 # ============================================================================
@@ -32,9 +41,9 @@ class FullGenerationStrategy(ContentGenerationStrategy):
     def generate(self, prompt: str, context: Dict) -> Tuple[str, Optional[str]]:
         """Генерация контента через GigaChat (всегда GigaChat для текста)"""
         logger.info("   Режим: ПОЛНАЯ ГЕНЕРАЦИЯ AI")
-        
+        system_prompt = context.get('_system_prompt') if context else None
         try:
-            content = self.client.chat(message=prompt)
+            content = self.client.chat(message=prompt, system_prompt=system_prompt)
             return content, None
         except Exception as e:
             logger.error(f"   ❌ Ошибка генерации: {e}")
@@ -58,37 +67,44 @@ class ParseAndRewriteStrategy(ContentGenerationStrategy):
         # Парсим первый успешный источник
         parsed_article = self._parse_first_successful_url()
         
+        system_prompt = context.get('_system_prompt') if context else None
         if not parsed_article:
             logger.warning("   Парсинг не удался, fallback на прямую генерацию")
-            return self.client.chat(message=prompt), None, None
+            return self.client.chat(message=prompt, system_prompt=system_prompt), None, None
         
         # Переписываем спаршенный контент (используем GigaChat для текста)
         rewrite_prompt = self._build_rewrite_prompt(prompt, parsed_article)
-        content = self.client.chat(message=rewrite_prompt)
+        content = self.client.chat(message=rewrite_prompt, system_prompt=system_prompt)
         
         source_info = f"Источник: {parsed_article['title']} ({parsed_article['url']})"
         return content, source_info, parsed_article
     
     def _parse_first_successful_url(self) -> Optional[Dict]:
-        """Парсинг первого успешного URL"""
+        """Парсинг первого успешного URL. Если текст короче MIN_PARSED_LENGTH — пробуем следующий источник."""
         from Asistent.parsers.universal_parser import UniversalParser
         
         parser = UniversalParser()
-        logger.info(f"   Попытка парсинга {len(self.urls)} источников...")
+        logger.info(f"   Попытка парсинга {len(self.urls)} источников (мин. {MIN_PARSED_LENGTH} символов)...")
         
         for url in self.urls:
             try:
                 result = parser.parse_article(url, download_images=False)
-                text_content = (result.get('text') or '').strip()
+                raw_text = (result.get('text') or '').strip()
+                text_content = ParseAndRewriteStrategy._clean_parsed_text(raw_text)
                 
-                if result.get('success') and text_content:
-                    parsed = {
-                        'title': (result.get('title', '') or '').strip() or 'Без названия',
-                        'text': text_content[:500],
-                        'url': url,
-                    }
-                    logger.info(f"   Спаршен источник: {parsed['title']} ({url})")
-                    return parsed
+                if not result.get('success') or not text_content:
+                    continue
+                if len(text_content) < MIN_PARSED_LENGTH:
+                    logger.warning(f"   Текст с {url} слишком короткий ({len(text_content)} символов), пробуем следующий источник")
+                    continue
+                
+                parsed = {
+                    'title': (result.get('title', '') or '').strip() or 'Без названия',
+                    'text': text_content[:MAX_PARSED_TEXT_FOR_PROMPT],
+                    'url': url,
+                }
+                logger.info(f"   Спаршен источник: {parsed['title']} ({url}), {len(parsed['text'])} символов")
+                return parsed
             
             except Exception as e:
                 logger.error(f"   Ошибка парсинга {url}: {e}")
@@ -97,12 +113,22 @@ class ParseAndRewriteStrategy(ContentGenerationStrategy):
         return None
     
     @staticmethod
+    def _clean_parsed_text(text: str) -> str:
+        """Очистка спаршенного текста: HTML, лишние пробелы, переносы (экономия токенов, без ИИ)."""
+        if not text or not isinstance(text, str):
+            return ''
+        s = strip_tags(text)
+        s = re.sub(r'\s+', ' ', s)
+        s = re.sub(r'\n\s*\n', '\n\n', s)
+        return s.strip()
+    
+    @staticmethod
     def _build_rewrite_prompt(base_prompt: str, parsed: Dict) -> str:
-        """Построение промпта для переписывания"""
+        """Построение промпта для переписывания (текст уже очищен и обрезан)."""
         return (
             f"{base_prompt}\n\n"
             f"СПАРШЕННЫЙ КОНТЕНТ:\n"
-            f"{parsed['title']}\n{parsed['text']}...\n\n"
+            f"{parsed['title']}\n{parsed['text']}\n\n"
             f"ПЕРЕПИШИ КОНТЕНТ, сохраняя ключевые факты и структуру."
         )
 

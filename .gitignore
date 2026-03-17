@@ -44,7 +44,8 @@ system_logs/
 
 # ===== IDE =====
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
 .cursor/
 .gigaide/
 *.swp

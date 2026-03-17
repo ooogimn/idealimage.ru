@@ -235,167 +235,207 @@ def _to_legacy_schedule_view(periodic_task):
 @staff_member_required
 def admin_dashboard(request):
     """Панель администратора с полными метриками AI"""
-    # Инициализируем Dashboard метрик AI
-    dashboard = AIMetricsDashboard()
-    
     # Получаем период для анализа (по умолчанию 30 дней)
     period_days = int(request.GET.get('period', 30))
-    
-    # Задания на проверке (TaskAssignment со статусом 'completed')
-    tasks_for_review = TaskAssignment.objects.filter(
-        status='completed'
-    ).select_related('task', 'author').order_by('-submitted_at')[:10]
-    
-    # Просроченные задания
-    overdue_tasks = ContentTask.objects.filter(
-        deadline__lt=timezone.now(),
-        status__in=['available', 'active']
-    )[:10]
-    
-    # Базовая статистика заданий
-    tasks_stats = {
-        'tasks_for_review': TaskAssignment.objects.filter(status='completed').count(),
-        'overdue_tasks': overdue_tasks.count(),
-        'active_authors': TaskAssignment.objects.filter(
-            status='in_progress'
-        ).values('author').distinct().count(),
-        'ai_articles_today': AIGeneratedArticle.objects.filter(
-            created_at__date=date.today()
-        ).count()
-    }
-    
-    # Активные расписания AI
-    ai_schedules = AISchedule.objects.filter(is_active=True)
-    
-    # Проверка статуса Django-Q
-    djangoq_status = djangoq_monitor.check_djangoq_status()
-    
-    # ============================================================================
-    # НОВЫЕ ДАННЫЕ: GigaChat Control Center
-    # ============================================================================
-    
-    # Балансы всех 4 моделей
-    gigachat_balances = get_all_models_balance()
-    
-    # Стоимость (сегодня, неделя, месяц)
-    costs_today = calculate_costs('today')
-    costs_week = calculate_costs('week')
-    costs_month = calculate_costs('month')
-    
-    # Системные алерты
-    system_alerts = get_system_alerts()
-    
-    # Распределение запросов по моделям
-    model_distribution = get_model_distribution(days=period_days)
-    
-    # Навигационная статистика
-    navigation_stats = get_navigation_stats()
-    
-    # SEO статистика
-    seo_stats = get_seo_dashboard_stats()
-    
-    # Метрики гороскопов
-    from Asistent.schedule.metrics import get_horoscope_metrics
-    horoscope_metrics = get_horoscope_metrics(days=period_days)
-    
-    # Django-Q здоровье
-    djangoq_health = get_djangoq_health()
-    
-    # История для Chart.js
-    usage_history = get_usage_history_for_chart(days=period_days)
-    
-    now = timezone.now()
-    day_ago = now - timedelta(days=1)
-    week_ago = now - timedelta(days=7)
-
-    recent_schedule_runs = AIScheduleRun.objects.select_related('schedule').order_by('-started_at')[:10]
-
-    def collect_status_counts(queryset):
-        counts = queryset.values('status').annotate(total=Count('id'))
-        mapping = {item['status']: item['total'] for item in counts}
-        mapping['total'] = queryset.count()
-        return mapping
-
-    runs_today_qs = AIScheduleRun.objects.filter(started_at__gte=day_ago)
-    runs_week_qs = AIScheduleRun.objects.filter(started_at__gte=week_ago)
-
-    schedule_run_stats_today = collect_status_counts(runs_today_qs)
-    schedule_run_stats_week = collect_status_counts(runs_week_qs)
-
-    failing_schedules = (
-        AIScheduleRun.objects.filter(status='failed', started_at__gte=week_ago)
-        .values('schedule__name')
-        .annotate(total=Count('id'))
-        .order_by('-total')[:5]
-    )
-
-    latest_runs_map = {}
-    for run in AIScheduleRun.objects.select_related('schedule').order_by('-started_at')[:200]:
-        if run.schedule_id not in latest_runs_map:
-            latest_runs_map[run.schedule_id] = run
-
-    dashboard_schedules = []
-    for schedule in AISchedule.objects.select_related('category', 'prompt_template').order_by('name'):
-        latest_run = latest_runs_map.get(schedule.id)
-        status_payload = _schedule_status_payload(schedule, latest_run)
-        payload = {
-            'schedule': schedule,
-            'latest_run': latest_run,
+    try:
+        # Инициализируем Dashboard метрик AI
+        dashboard = AIMetricsDashboard()
+        
+        # Задания на проверке (TaskAssignment со статусом 'completed')
+        tasks_for_review = TaskAssignment.objects.filter(
+            status='completed'
+        ).select_related('task', 'author').order_by('-submitted_at')[:10]
+        
+        # Просроченные задания
+        overdue_tasks = ContentTask.objects.filter(
+            deadline__lt=timezone.now(),
+            status__in=['available', 'active']
+        )[:10]
+        
+        # Базовая статистика заданий
+        tasks_stats = {
+            'tasks_for_review': TaskAssignment.objects.filter(status='completed').count(),
+            'overdue_tasks': overdue_tasks.count(),
+            'active_authors': TaskAssignment.objects.filter(
+                status='in_progress'
+            ).values('author').distinct().count(),
+            'ai_articles_today': AIGeneratedArticle.objects.filter(
+                created_at__date=date.today()
+            ).count()
         }
-        payload.update(status_payload)
-        dashboard_schedules.append(payload)
+        
+        # Активные расписания AI
+        ai_schedules = AISchedule.objects.filter(is_active=True)
+        
+        # Проверка статуса Django-Q
+        djangoq_status = djangoq_monitor.check_djangoq_status()
     
-    # Получаем все метрики AI Dashboard
-    context = {
-        # Статус Django-Q (старый + новый)
-        'djangoq_status': djangoq_status,
-        'djangoq_health': djangoq_health,
+        # ============================================================================
+        # НОВЫЕ ДАННЫЕ: GigaChat Control Center
+        # ============================================================================
         
-        # Задания и расписания
-        'tasks_for_review': tasks_for_review,
-        'overdue_tasks': overdue_tasks,
-        'tasks_stats': tasks_stats,
-        'ai_schedules': ai_schedules,
-        'recent_schedule_runs': recent_schedule_runs,
-        'schedule_run_stats_today': schedule_run_stats_today,
-        'schedule_run_stats_week': schedule_run_stats_week,
-        'schedule_run_failures': failing_schedules,
-        'dashboard_schedules': dashboard_schedules,
-        'now': now,
+        # Балансы всех 4 моделей
+        gigachat_balances = get_all_models_balance()
         
-        # Метрики AI Dashboard
-        'daily_stats': dashboard.get_daily_stats(),
-        'quality_metrics': dashboard.get_quality_metrics(),
-        'ai_vs_human': dashboard.compare_ai_vs_human(),
-        'schedule_performance': dashboard.get_schedule_performance(),
-        'cost_analysis': dashboard.get_cost_analysis(),
-        'trends': dashboard.get_trends(days=period_days),
+        # Стоимость (сегодня, неделя, месяц)
+        costs_today = calculate_costs('today')
+        costs_week = calculate_costs('week')
+        costs_month = calculate_costs('month')
         
-        # ===== НОВЫЙ КОНТЕКСТ: GigaChat Control Center =====
-        'gigachat_balances': gigachat_balances,
-        'costs_today': costs_today,
-        'costs_week': costs_week,
-        'costs_month': costs_month,
-        'system_alerts': system_alerts,
-        'model_distribution': model_distribution,
-        'navigation_stats': navigation_stats,
-        'seo_stats': seo_stats,
-        'horoscope_metrics': horoscope_metrics,
-        'usage_history': usage_history,
+        # Системные алерты
+        system_alerts = get_system_alerts()
         
-        # Параметры
-        'period_days': period_days,
-        'available_periods': [7, 14, 30, 60, 90],
+        # Распределение запросов по моделям
+        model_distribution = get_model_distribution(days=period_days)
         
-        # SEO-метатеги
-        'page_title': 'AI Control Center — IdealImage.ru',
-        'page_description': 'Центр управления AI-ассистентом: GigaChat мониторинг, балансы моделей, задания, расписания, метрики и SEO',
-        'meta_keywords': 'админ панель AI, GigaChat, управление AI, задания AI, расписания AI, метрики, SEO',
-        'og_title': 'AI Control Center — Панель администратора',
-        'og_description': 'Полный контроль над AI-ассистентом на IdealImage.ru',
-    }
-    
-    return render(request, 'Asistent/admin_dashboard.html', context)
+        # Навигационная статистика
+        navigation_stats = get_navigation_stats()
+        
+        # SEO статистика
+        seo_stats = get_seo_dashboard_stats()
+        
+        # Метрики гороскопов
+        from Asistent.schedule.metrics import get_horoscope_metrics
+        horoscope_metrics = get_horoscope_metrics(days=period_days)
+        
+        # Django-Q здоровье
+        djangoq_health = get_djangoq_health()
+        
+        # История для Chart.js
+        usage_history = get_usage_history_for_chart(days=period_days)
+        
+        now = timezone.now()
+        day_ago = now - timedelta(days=1)
+        week_ago = now - timedelta(days=7)
+
+        recent_schedule_runs = AIScheduleRun.objects.select_related('schedule').order_by('-started_at')[:10]
+
+        def collect_status_counts(queryset):
+            counts = queryset.values('status').annotate(total=Count('id'))
+            mapping = {item['status']: item['total'] for item in counts}
+            mapping['total'] = queryset.count()
+            return mapping
+
+        runs_today_qs = AIScheduleRun.objects.filter(started_at__gte=day_ago)
+        runs_week_qs = AIScheduleRun.objects.filter(started_at__gte=week_ago)
+
+        schedule_run_stats_today = collect_status_counts(runs_today_qs)
+        schedule_run_stats_week = collect_status_counts(runs_week_qs)
+
+        failing_schedules = (
+            AIScheduleRun.objects.filter(status='failed', started_at__gte=week_ago)
+            .values('schedule__name')
+            .annotate(total=Count('id'))
+            .order_by('-total')[:5]
+        )
+
+        latest_runs_map = {}
+        for run in AIScheduleRun.objects.select_related('schedule').order_by('-started_at')[:200]:
+            if run.schedule_id not in latest_runs_map:
+                latest_runs_map[run.schedule_id] = run
+
+        dashboard_schedules = []
+        for schedule in AISchedule.objects.select_related('category', 'prompt_template').order_by('name'):
+            latest_run = latest_runs_map.get(schedule.id)
+            status_payload = _schedule_status_payload(schedule, latest_run)
+            payload = {
+                'schedule': schedule,
+                'latest_run': latest_run,
+            }
+            payload.update(status_payload)
+            dashboard_schedules.append(payload)
+        
+        # Получаем все метрики AI Dashboard
+        context = {
+            # Статус Django-Q (старый + новый)
+            'djangoq_status': djangoq_status,
+            'djangoq_health': djangoq_health,
+            
+            # Задания и расписания
+            'tasks_for_review': tasks_for_review,
+            'overdue_tasks': overdue_tasks,
+            'tasks_stats': tasks_stats,
+            'ai_schedules': ai_schedules,
+            'recent_schedule_runs': recent_schedule_runs,
+            'schedule_run_stats_today': schedule_run_stats_today,
+            'schedule_run_stats_week': schedule_run_stats_week,
+            'schedule_run_failures': failing_schedules,
+            'dashboard_schedules': dashboard_schedules,
+            'now': now,
+            
+            # Метрики AI Dashboard
+            'daily_stats': dashboard.get_daily_stats(),
+            'quality_metrics': dashboard.get_quality_metrics(),
+            'ai_vs_human': dashboard.compare_ai_vs_human(),
+            'schedule_performance': dashboard.get_schedule_performance(),
+            'cost_analysis': dashboard.get_cost_analysis(),
+            'trends': dashboard.get_trends(days=period_days),
+            
+            # ===== НОВЫЙ КОНТЕКСТ: GigaChat Control Center =====
+            'gigachat_balances': gigachat_balances,
+            'costs_today': costs_today,
+            'costs_week': costs_week,
+            'costs_month': costs_month,
+            'system_alerts': system_alerts,
+            'model_distribution': model_distribution,
+            'navigation_stats': navigation_stats,
+            'seo_stats': seo_stats,
+            'horoscope_metrics': horoscope_metrics,
+            'usage_history': usage_history,
+            
+            # Параметры
+            'period_days': period_days,
+            'available_periods': [7, 14, 30, 60, 90],
+            
+            # SEO-метатеги
+            'page_title': 'AI Control Center — IdealImage.ru',
+            'page_description': 'Центр управления AI-ассистентом: GigaChat мониторинг, балансы моделей, задания, расписания, метрики и SEO',
+            'meta_keywords': 'админ панель AI, GigaChat, управление AI, задания AI, расписания AI, метрики, SEO',
+            'og_title': 'AI Control Center — Панель администратора',
+            'og_description': 'Полный контроль над AI-ассистентом на IdealImage.ru',
+        }
+        
+        return render(request, 'Asistent/admin_dashboard.html', context)
+    except Exception as e:
+        logger.exception('admin_dashboard failed: %s', e)
+        fallback = {
+            'djangoq_status': {},
+            'djangoq_health': {},
+            'tasks_for_review': [],
+            'overdue_tasks': [],
+            'tasks_stats': {'tasks_for_review': 0, 'overdue_tasks': 0, 'active_authors': 0, 'ai_articles_today': 0},
+            'ai_schedules': [],
+            'recent_schedule_runs': [],
+            'schedule_run_stats_today': {},
+            'schedule_run_stats_week': {},
+            'schedule_run_failures': [],
+            'dashboard_schedules': [],
+            'now': timezone.now(),
+            'daily_stats': {},
+            'quality_metrics': {},
+            'ai_vs_human': {},
+            'schedule_performance': [],
+            'cost_analysis': {},
+            'trends': [],
+            'gigachat_balances': {},
+            'costs_today': {},
+            'costs_week': {},
+            'costs_month': {},
+            'system_alerts': [],
+            'model_distribution': {},
+            'navigation_stats': {},
+            'seo_stats': {},
+            'horoscope_metrics': {},
+            'usage_history': [],
+            'period_days': period_days,
+            'available_periods': [7, 14, 30, 60, 90],
+            'page_title': 'AI Control Center — IdealImage.ru',
+            'page_description': 'Центр управления AI-ассистентом',
+            'meta_keywords': '',
+            'og_title': 'AI Control Center',
+            'og_description': 'Панель администратора',
+        }
+        return render(request, 'Asistent/admin_dashboard.html', fallback)
 
 
 # Календарь заданий
@@ -1962,11 +2002,10 @@ def get_prompt_variables(request, prompt_id):
         from .models import PromptTemplate
 
         prompt = PromptTemplate.objects.get(id=prompt_id)
-        
-        # Возвращаем переменные и дополнительную информацию
+        variables = prompt.get_template_variables()
         return JsonResponse({
             'success': True,
-            'variables': prompt.variables if isinstance(prompt.variables, list) else [],
+            'variables': variables,
             'name': prompt.name,
             'category': prompt.category,
             'blog_category_id': prompt.blog_category.id if prompt.blog_category else None,

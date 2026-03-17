@@ -425,241 +425,276 @@ def master_admin_dashboard(request):
     from django.db.models import Sum, Count, Avg
     from django.utils import timezone
     from datetime import timedelta
-    from donations.models import Donation, WeeklyReport, BonusPaymentRegistry
-    from Asistent.models import ContentTask, TaskAssignment, AISchedule
+    try:
+        from donations.models import Donation, WeeklyReport, BonusPaymentRegistry
+        from Asistent.models import ContentTask, TaskAssignment, AISchedule
+    except ImportError:
+        logger.exception('master_admin_dashboard: missing donations or Asistent')
+        return render(request, 'admin/master_dashboard.html', {
+            'page_title': 'Панель администратора - IdealImage.ru',
+            'site_stats': {'total_posts': 0, 'total_authors': 0, 'total_users': 0, 'total_comments': 0},
+            'recent_stats': {'posts_week': 0, 'comments_week': 0, 'donations_week': 0},
+            'ai_stats': {},
+            'bonus_stats': {'pending_payments': 0, 'pending_amount': 0, 'latest_report': None},
+            'ad_stats': {'active_campaigns': 0, 'total_advertisers': 0, 'revenue_month': 0},
+            'djangoq_status': {},
+            'content_tasks_stats': {},
+            'ai_schedules_stats': {},
+            'revenue_stats': {'total_revenue': 0, 'avg_check': 0, 'transactions_count': 0, 'breakdown': {}, 'top_sources': [], 'chart_labels': [], 'chart_data': [], 'period_days': 7},
+            'sozseti_stats': {'total_channels': 0, 'total_subscribers': 0, 'publications_week': 0, 'top_channel': None},
+            'categorys': [],
+        })
     
     # Общая статистика сайта
-    site_stats = {
-        'total_posts': Post.objects.filter(status='published').count(),
-        'total_authors': User.objects.filter(author_posts__isnull=False).distinct().count(),
-        'total_users': User.objects.count(),
-        'total_comments': Comment.objects.filter(active=True).count(),
-    }
-    
-    # Статистика за последние 7 дней
-    week_ago = timezone.now() - timedelta(days=7)
-    recent_stats = {
-        'posts_week': Post.objects.filter(created__gte=week_ago, status='published').count(),
-        'comments_week': Comment.objects.filter(created__gte=week_ago, active=True).count(),
-        'donations_week': Donation.objects.filter(
-            completed_at__gte=week_ago,
-            status='succeeded'
-        ).aggregate(total=Sum('amount'))['total'] or 0,
-    }
-    
-    # Статистика AI и заданий
-    ai_stats = {
-        'active_schedules': AISchedule.objects.filter(is_active=True).count(),
-        'tasks_pending': ContentTask.objects.filter(status='available').count(),
-        'tasks_in_progress': TaskAssignment.objects.filter(status='in_progress').count(),
-        'tasks_for_review': TaskAssignment.objects.filter(status='completed').count(),
-    }
-    
-    # Статистика социальных сетей
     try:
-        from Sozseti.models import SocialChannel, PostPublication
-        sozseti_stats = {
-            'total_channels': SocialChannel.objects.filter(is_active=True).count(),
-            'total_subscribers': sum(ch.subscribers_count for ch in SocialChannel.objects.filter(platform__name='telegram')),
-            'publications_week': PostPublication.objects.filter(
-                published_at__gte=week_ago,
-                status='published'
+        site_stats = {
+            'total_posts': Post.objects.filter(status='published').count(),
+            'total_authors': User.objects.filter(author_posts__isnull=False).distinct().count(),
+            'total_users': User.objects.count(),
+            'total_comments': Comment.objects.filter(active=True).count(),
+        }
+        
+        # Статистика за последние 7 дней
+        week_ago = timezone.now() - timedelta(days=7)
+        recent_stats = {
+            'posts_week': Post.objects.filter(created__gte=week_ago, status='published').count(),
+            'comments_week': Comment.objects.filter(created__gte=week_ago, active=True).count(),
+            'donations_week': Donation.objects.filter(
+                completed_at__gte=week_ago,
+                status='succeeded'
+            ).aggregate(total=Sum('amount'))['total'] or 0,
+        }
+        
+        # Статистика AI и заданий
+        ai_stats = {
+            'active_schedules': AISchedule.objects.filter(is_active=True).count(),
+            'tasks_pending': ContentTask.objects.filter(status='available').count(),
+            'tasks_in_progress': TaskAssignment.objects.filter(status='in_progress').count(),
+            'tasks_for_review': TaskAssignment.objects.filter(status='completed').count(),
+        }
+        
+        # Статистика социальных сетей
+        try:
+            from Sozseti.models import SocialChannel, PostPublication
+            sozseti_stats = {
+                'total_channels': SocialChannel.objects.filter(is_active=True).count(),
+                'total_subscribers': sum(ch.subscribers_count for ch in SocialChannel.objects.filter(platform__name='telegram')),
+                'publications_week': PostPublication.objects.filter(
+                    published_at__gte=week_ago,
+                    status='published'
+                ).count(),
+                'top_channel': SocialChannel.objects.filter(platform__name='telegram').order_by('-subscribers_count').first(),
+            }
+        except Exception:
+            sozseti_stats = {
+                'total_channels': 0,
+                'total_subscribers': 0,
+                'publications_week': 0,
+                'top_channel': None,
+            }
+        
+        # Статистика бонусов
+        bonus_stats = {
+            'pending_payments': BonusPaymentRegistry.objects.filter(
+                status__in=['pending', 'partial']
             ).count(),
-            'top_channel': SocialChannel.objects.filter(platform__name='telegram').order_by('-subscribers_count').first(),
+            'pending_amount': BonusPaymentRegistry.objects.filter(
+                status__in=['pending', 'partial']
+            ).aggregate(total=Sum('amount_to_pay'))['total'] or 0,
+            'latest_report': WeeklyReport.objects.filter(is_finalized=True).order_by('-week_start').first(),
         }
-    except Exception:
-        sozseti_stats = {
-            'total_channels': 0,
-            'total_subscribers': 0,
-            'publications_week': 0,
-            'top_channel': None,
+        
+        # Проверка Django-Q с актуальным сервисом
+        from Asistent.services.djangoq_monitor import check_djangoq_status
+        djangoq_status = check_djangoq_status()
+        
+        # Статистика по заданиям авторов
+        from Asistent.models import ContentTask, TaskAssignment
+        content_tasks_stats = {
+            'available': ContentTask.objects.filter(status='available').count(),
+            'active': TaskAssignment.objects.filter(status='in_progress').count(),
+            'completed_week': TaskAssignment.objects.filter(
+                status__in=['completed', 'approved'],
+                completed_at__gte=week_ago
+            ).count(),
+            'total': ContentTask.objects.count(),
+            'active_authors': TaskAssignment.objects.filter(
+                status='in_progress'
+            ).values('author').distinct().count(),
+            'avg_reward': ContentTask.objects.filter(
+                status='available'
+            ).aggregate(avg=Sum('reward'))['avg'] or 0,
         }
-    
-    # Статистика бонусов
-    bonus_stats = {
-        'pending_payments': BonusPaymentRegistry.objects.filter(
-            status__in=['pending', 'partial']
-        ).count(),
-        'pending_amount': BonusPaymentRegistry.objects.filter(
-            status__in=['pending', 'partial']
-        ).aggregate(total=Sum('amount_to_pay'))['total'] or 0,
-        'latest_report': WeeklyReport.objects.filter(is_finalized=True).order_by('-week_start').first(),
-    }
-    
-    # Проверка Django-Q с актуальным сервисом
-    from Asistent.services.djangoq_monitor import check_djangoq_status
-    djangoq_status = check_djangoq_status()
-    
-    # Статистика по заданиям авторов
-    from Asistent.models import ContentTask, TaskAssignment
-    content_tasks_stats = {
-        'available': ContentTask.objects.filter(status='available').count(),
-        'active': TaskAssignment.objects.filter(status='in_progress').count(),
-        'completed_week': TaskAssignment.objects.filter(
-            status__in=['completed', 'approved'],
-            completed_at__gte=week_ago
-        ).count(),
-        'total': ContentTask.objects.count(),
-        'active_authors': TaskAssignment.objects.filter(
-            status='in_progress'
-        ).values('author').distinct().count(),
-        'avg_reward': ContentTask.objects.filter(
-            status='available'
-        ).aggregate(avg=Sum('reward'))['avg'] or 0,
-    }
-    
-    # Статистика по расписаниям AI
-    from Asistent.models import AISchedule
-    
-    today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    
-    ai_schedules_stats = {
-        'active': AISchedule.objects.filter(is_active=True).count(),
-        'inactive': AISchedule.objects.filter(is_active=False).count(),
-        'total': AISchedule.objects.count(),
-        'generated_today': Post.objects.filter(
-            author__username='AI',
-            created__gte=today_start
-        ).count(),
-        'total_articles': Post.objects.filter(author__username='AI').count(),
-        'success_rate': 95,  # Можно вычислить из истории генераций
-    }
-    
-    # Статистика рекламы
-    try:
-        from advertising.models import AdCampaign, Advertiser, AdClick
-        from decimal import Decimal
         
-        month_ago = timezone.now() - timedelta(days=30)
+        # Статистика по расписаниям AI
+        from Asistent.models import AISchedule
         
-        # Доход за месяц
-        revenue_month = Decimal('0.00')
-        for click in AdClick.objects.filter(clicked_at__gte=month_ago):
-            if click.ad_banner:
-                revenue_month += click.ad_banner.campaign.cost_per_click
-            elif click.context_ad:
-                revenue_month += click.context_ad.cost_per_click
+        today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
         
-        ad_stats = {
-            'active_campaigns': AdCampaign.objects.filter(is_active=True).count(),
-            'total_advertisers': Advertiser.objects.filter(is_active=True).count(),
-            'revenue_month': revenue_month,
-        }
-    except:
-        ad_stats = {
-            'active_campaigns': 0,
-            'total_advertisers': 0,
-            'revenue_month': 0,
+        ai_schedules_stats = {
+            'active': AISchedule.objects.filter(is_active=True).count(),
+            'inactive': AISchedule.objects.filter(is_active=False).count(),
+            'total': AISchedule.objects.count(),
+            'generated_today': Post.objects.filter(
+                author__username='AI',
+                created__gte=today_start
+            ).count(),
+            'total_articles': Post.objects.filter(author__username='AI').count(),
+            'success_rate': 95,  # Можно вычислить из истории генераций
         }
     
-    # ============================================
-    # Статистика доходов для виджета
-    # ============================================
-    period_days = 7
-    period_start = timezone.now() - timedelta(days=period_days)
-    
-    # Все успешные платежи за период
-    donations_period = Donation.objects.filter(
-        status='succeeded',
-        completed_at__gte=period_start
-    )
-    
-    # Общая сумма
-    total_revenue = donations_period.aggregate(
-        total=Sum('amount')
-    )['total'] or Decimal('0.00')
-    
-    # Средний чек
-    avg_check = donations_period.aggregate(
-        avg=Avg('amount')
-    )['avg'] or Decimal('0.00')
-    
-    # Количество транзакций
-    transactions_count = donations_period.count()
-    
-    # Разбивка по источникам (payment_purpose)
-    breakdown = {
-        'donations': donations_period.filter(
-            payment_purpose='donation'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00'),
+        # Статистика рекламы
+        try:
+            from advertising.models import AdCampaign, Advertiser, AdClick
+            from decimal import Decimal
+            
+            month_ago = timezone.now() - timedelta(days=30)
+            
+            # Доход за месяц
+            revenue_month = Decimal('0.00')
+            for click in AdClick.objects.filter(clicked_at__gte=month_ago):
+                if click.ad_banner:
+                    revenue_month += click.ad_banner.campaign.cost_per_click
+                elif click.context_ad:
+                    revenue_month += click.context_ad.cost_per_click
+            
+            ad_stats = {
+                'active_campaigns': AdCampaign.objects.filter(is_active=True).count(),
+                'total_advertisers': Advertiser.objects.filter(is_active=True).count(),
+                'revenue_month': revenue_month,
+            }
+        except Exception:
+            ad_stats = {
+                'active_campaigns': 0,
+                'total_advertisers': 0,
+                'revenue_month': 0,
+            }
         
-        'premium': donations_period.filter(
-            payment_purpose__startswith='premium_'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00'),
+        # ============================================
+        # Статистика доходов для виджета
+        # ============================================
+        period_days = 7
+        period_start = timezone.now() - timedelta(days=period_days)
         
-        'ai_coauthor': donations_period.filter(
-            Q(payment_purpose__startswith='ai_')
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00'),
-        
-        'marathons': donations_period.filter(
-            payment_purpose__startswith='marathon_'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00'),
-        
-        'advertising': donations_period.filter(
-            payment_purpose__startswith='ad_'
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00'),
-    }
-    
-    # Топ-3 источника
-    sources_list = [
-        {'name': '💝 Донаты', 'key': 'donations', 'amount': breakdown['donations']},
-        {'name': '💎 Premium', 'key': 'premium', 'amount': breakdown['premium']},
-        {'name': '🤖 AI-Соавтор', 'key': 'ai_coauthor', 'amount': breakdown['ai_coauthor']},
-        {'name': '📚 Марафоны', 'key': 'marathons', 'amount': breakdown['marathons']},
-        {'name': '📢 Реклама', 'key': 'advertising', 'amount': breakdown['advertising']},
-    ]
-    top_sources = sorted(sources_list, key=lambda x: x['amount'], reverse=True)[:3]
-    
-    # Данные для графика (последние 7 дней)
-    chart_labels = []
-    chart_data = []
-    
-    for i in range(period_days - 1, -1, -1):
-        day = timezone.now() - timedelta(days=i)
-        day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
-        day_end = day_start + timedelta(days=1)
-        
-        day_total = Donation.objects.filter(
+        # Все успешные платежи за период
+        donations_period = Donation.objects.filter(
             status='succeeded',
-            completed_at__gte=day_start,
-            completed_at__lt=day_end
-        ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            completed_at__gte=period_start
+        )
         
-        chart_labels.append(day.strftime('%d.%m'))
-        chart_data.append(float(day_total))
-    
-    # Собираем всё в один dict
-    revenue_stats = {
-        'total_revenue': total_revenue,
-        'avg_check': avg_check,
-        'transactions_count': transactions_count,
-        'breakdown': breakdown,
-        'top_sources': top_sources,
-        'chart_labels': chart_labels,
-        'chart_data': chart_data,
-        'period_days': period_days,
-    }
-    
-    # Категории для меню
-    categorys = cache.get('categorys_list')
-    if categorys is None:
-        categorys = Category.objects.all()
-        cache.set('categorys_list', categorys, 300)
-    
-    context = {
-        'page_title': 'Панель администратора - IdealImage.ru',
-        'page_description': 'Главная панель управления сайтом IdealImage.ru',
-        'site_stats': site_stats,
-        'recent_stats': recent_stats,
-        'ai_stats': ai_stats,
-        'bonus_stats': bonus_stats,
-        'ad_stats': ad_stats,
-        'djangoq_status': djangoq_status,
-        'content_tasks_stats': content_tasks_stats,
-        'ai_schedules_stats': ai_schedules_stats,
-        'revenue_stats': revenue_stats,
-        'sozseti_stats': sozseti_stats,
-        'categorys': categorys,
-    }
-    
-    return render(request, 'admin/master_dashboard.html', context)
+        # Общая сумма
+        total_revenue = donations_period.aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0.00')
+        
+        # Средний чек
+        avg_check = donations_period.aggregate(
+            avg=Avg('amount')
+        )['avg'] or Decimal('0.00')
+        
+        # Количество транзакций
+        transactions_count = donations_period.count()
+        
+        # Разбивка по источникам (payment_purpose)
+        breakdown = {
+            'donations': donations_period.filter(
+                payment_purpose='donation'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00'),
+            
+            'premium': donations_period.filter(
+                payment_purpose__startswith='premium_'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00'),
+            
+            'ai_coauthor': donations_period.filter(
+                Q(payment_purpose__startswith='ai_')
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00'),
+            
+            'marathons': donations_period.filter(
+                payment_purpose__startswith='marathon_'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00'),
+            
+            'advertising': donations_period.filter(
+                payment_purpose__startswith='ad_'
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00'),
+        }
+        
+        # Топ-3 источника
+        sources_list = [
+            {'name': '💝 Донаты', 'key': 'donations', 'amount': breakdown['donations']},
+            {'name': '💎 Premium', 'key': 'premium', 'amount': breakdown['premium']},
+            {'name': '🤖 AI-Соавтор', 'key': 'ai_coauthor', 'amount': breakdown['ai_coauthor']},
+            {'name': '📚 Марафоны', 'key': 'marathons', 'amount': breakdown['marathons']},
+            {'name': '📢 Реклама', 'key': 'advertising', 'amount': breakdown['advertising']},
+        ]
+        top_sources = sorted(sources_list, key=lambda x: x['amount'], reverse=True)[:3]
+        
+        # Данные для графика (последние 7 дней)
+        chart_labels = []
+        chart_data = []
+        
+        for i in range(period_days - 1, -1, -1):
+            day = timezone.now() - timedelta(days=i)
+            day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+            day_end = day_start + timedelta(days=1)
+            
+            day_total = Donation.objects.filter(
+                status='succeeded',
+                completed_at__gte=day_start,
+                completed_at__lt=day_end
+            ).aggregate(total=Sum('amount'))['total'] or Decimal('0.00')
+            
+            chart_labels.append(day.strftime('%d.%m'))
+            chart_data.append(float(day_total))
+        
+        # Собираем всё в один dict
+        revenue_stats = {
+            'total_revenue': total_revenue,
+            'avg_check': avg_check,
+            'transactions_count': transactions_count,
+            'breakdown': breakdown,
+            'top_sources': top_sources,
+            'chart_labels': chart_labels,
+            'chart_data': chart_data,
+            'period_days': period_days,
+        }
+        
+        # Категории для меню
+        categorys = cache.get('categorys_list')
+        if categorys is None:
+            categorys = Category.objects.all()
+            cache.set('categorys_list', categorys, 300)
+        
+        context = {
+            'page_title': 'Панель администратора - IdealImage.ru',
+            'page_description': 'Главная панель управления сайтом IdealImage.ru',
+            'site_stats': site_stats,
+            'recent_stats': recent_stats,
+            'ai_stats': ai_stats,
+            'bonus_stats': bonus_stats,
+            'ad_stats': ad_stats,
+            'djangoq_status': djangoq_status,
+            'content_tasks_stats': content_tasks_stats,
+            'ai_schedules_stats': ai_schedules_stats,
+            'revenue_stats': revenue_stats,
+            'sozseti_stats': sozseti_stats,
+            'categorys': categorys,
+        }
+        
+        return render(request, 'admin/master_dashboard.html', context)
+    except Exception as e:
+        logger.exception('master_admin_dashboard failed: %s', e)
+        return render(request, 'admin/master_dashboard.html', {
+            'page_title': 'Панель администратора - IdealImage.ru',
+            'page_description': 'Главная панель управления сайтом IdealImage.ru',
+            'site_stats': {'total_posts': 0, 'total_authors': 0, 'total_users': 0, 'total_comments': 0},
+            'recent_stats': {'posts_week': 0, 'comments_week': 0, 'donations_week': 0},
+            'ai_stats': {},
+            'bonus_stats': {'pending_payments': 0, 'pending_amount': 0, 'latest_report': None},
+            'ad_stats': {'active_campaigns': 0, 'total_advertisers': 0, 'revenue_month': 0},
+            'djangoq_status': {},
+            'content_tasks_stats': {},
+            'ai_schedules_stats': {},
+            'revenue_stats': {'total_revenue': 0, 'avg_check': 0, 'transactions_count': 0, 'breakdown': {}, 'top_sources': [], 'chart_labels': [], 'chart_data': [], 'period_days': 7},
+            'sozseti_stats': {'total_channels': 0, 'total_subscribers': 0, 'publications_week': 0, 'top_channel': None},
+            'categorys': [],
+        })

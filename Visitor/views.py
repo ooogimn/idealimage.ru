@@ -923,32 +923,33 @@ class SuperuserDashboardView(LoginRequiredMixin, TemplateView):
         context['page_title'] = 'Панель администратора — IdealImage.ru'
         context['page_description'] = 'Панель управления администратора сайта IdealImage.ru — статистика, заявки, модерация'
         
-        # Заявки на роли
-        context['pending_applications'] = RoleApplication.objects.filter(
-            status='pending'
-        ).select_related('user__profile').order_by('-applied_at')
-        
-        # Последние 20 действий
-        context['recent_activities'] = ActivityLog.objects.all().select_related(
-            'user', 'target_user'
-        ).order_by('-created_at')[:20]
-        
-        # Даты для периодов
-        from datetime import datetime, timedelta
-        now = timezone.now()
-        
-        # Текущий месяц (с 1-го числа до сейчас)
-        current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        current_month_end = now
-        
-        # Прошлый месяц (полный календарный месяц)
-        last_month_end = current_month_start - timedelta(days=1)
-        last_month_start = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-        
-        # Получаем всех пользователей, у которых есть хотя бы одна статья
-        authors_with_posts = User.objects.filter(
-            author_posts__isnull=False
-        ).distinct().select_related('profile')
+        try:
+            # Заявки на роли (без user__profile — у части пользователей может не быть профиля)
+            context['pending_applications'] = list(RoleApplication.objects.filter(
+                status='pending'
+            ).select_related('user').order_by('-applied_at'))
+            
+            # Последние 20 действий
+            context['recent_activities'] = ActivityLog.objects.all().select_related(
+                'user', 'target_user'
+            ).order_by('-created_at')[:20]
+            
+            # Даты для периодов
+            from datetime import datetime, timedelta
+            now = timezone.now()
+            
+            # Текущий месяц (с 1-го числа до сейчас)
+            current_month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            current_month_end = now
+            
+            # Прошлый месяц (полный календарный месяц)
+            last_month_end = current_month_start - timedelta(days=1)
+            last_month_start = last_month_end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            # Получаем всех пользователей, у которых есть хотя бы одна статья
+            authors_with_posts = User.objects.filter(
+                author_posts__isnull=False
+            ).distinct()
         
         # 4 набора статистики
         authors_stats_all_time = []
@@ -1195,6 +1196,34 @@ class SuperuserDashboardView(LoginRequiredMixin, TemplateView):
             # Если Asistent не установлен
             context['ai_enabled'] = False
             context['ai_stats'] = {}
+        except Exception as e:
+            logger.exception('SuperuserDashboardView get_context_data failed: %s', e)
+            empty_page = Paginator([], 20).get_page(1)
+            zero_totals = {'posts': 0, 'views': 0, 'likes': 0, 'donations': 0, 'comments': 0, 'subscribers': 0}
+            context.setdefault('pending_applications', [])
+            context.setdefault('recent_activities', [])
+            context.setdefault('page_all_time', empty_page)
+            context.setdefault('page_last_month', empty_page)
+            context.setdefault('page_current_month', empty_page)
+            context.setdefault('page_dynamics', empty_page)
+            context.setdefault('authors_totals_all_time', zero_totals)
+            context.setdefault('authors_totals_last_month', zero_totals)
+            context.setdefault('authors_totals_current_month', zero_totals)
+            context.setdefault('authors_totals_dynamics', zero_totals)
+            context.setdefault('total_authors', 0)
+            context.setdefault('per_page', 20)
+            context.setdefault('authors_stats', [])
+            context.setdefault('authors_totals', zero_totals)
+            context.setdefault('total_users', 0)
+            context.setdefault('total_posts', 0)
+            context.setdefault('total_comments', 0)
+            context.setdefault('total_donations', 0)
+            context.setdefault('ai_enabled', False)
+            context.setdefault('ai_stats', {})
+            context.setdefault('tasks_stats', {})
+            context.setdefault('tasks_for_review', [])
+            context.setdefault('overdue_tasks', [])
+            context.setdefault('ai_schedules', [])
         
         return context
 

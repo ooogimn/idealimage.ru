@@ -204,6 +204,14 @@ class AIScheduleForm(forms.ModelForm):
         # Если редактируем существующее расписание, заполняем поля из payload_template
         if self.instance and self.instance.pk:
             payload = self.instance.payload_template or {}
+            if isinstance(payload, str):
+                try:
+                    parsed_payload = json.loads(payload) if payload.strip() else {}
+                    payload = parsed_payload if isinstance(parsed_payload, dict) else {}
+                except json.JSONDecodeError:
+                    payload = {}
+            elif not isinstance(payload, dict):
+                payload = {}
             # Заполняем поля параметров генерации гороскопов
             if 'generation_delay' in self.fields:
                 self.fields['generation_delay'].initial = payload.get('generation_delay', 2)

@@ -261,23 +261,28 @@ class UserLoginView(SuccessMessageMixin, LoginView):
         return context
     
     def form_valid(self, form):
-        """Устанавливаем долгую сессию для всех пользователей"""
-        response = super().form_valid(form)
-        
-        # Автоматически устанавливаем долгую сессию (1 год)
-        self.request.session.set_expiry(31536000)  # 365 дней
-        
-        # Логируем вход (не падаем при ошибке — вход важнее лога)
+        """Устанавливаем долгую сессию для всех пользователей. Любая ошибка после проверки пароля не мешает входу."""
+        from django.contrib.auth import login
+        from django.http import HttpResponseRedirect
+        user = form.get_user()
         try:
-            ActivityLog.objects.create(
-                user=self.request.user,
-                action_type='user_registered',
-                description=f'Пользователь {self.request.user.username} вошел в систему'
-            )
-        except Exception:
-            logger.exception('ActivityLog create failed on login')
-        
-        return response
+            response = super().form_valid(form)
+            self.request.session.set_expiry(31536000)  # 365 дней
+            try:
+                ActivityLog.objects.create(
+                    user=self.request.user,
+                    action_type='user_registered',
+                    description=f'Пользователь {self.request.user.username} вошел в систему'
+                )
+            except Exception:
+                logger.exception('ActivityLog create failed on login')
+            return response
+        except Exception as e:
+            logger.exception('Login form_valid failed: %s', e)
+            # Пароль уже проверен, пользователь валиден — делаем вход вручную и редирект
+            login(self.request, user, backend='django.contrib.auth.backends.ModelBackend')
+            self.request.session.set_expiry(31536000)
+            return HttpResponseRedirect(self.get_success_url())
         
 """ Представление для выхода с сайта  """
 class UserLogoutView(LogoutView):
@@ -374,8 +379,13 @@ class PersonalCabinetView(LoginRequiredMixin, TemplateView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user = self.request.user
-        profile = user.profile
-        
+        # Безопасно получаем профиль (на случай миграции БД или пользователей без профиля)
+        try:
+            profile = user.profile
+        except Profile.DoesNotExist:
+            profile = Profile.objects.create(vizitor=user)
+            logger.info('Created missing profile for user id=%s', user.id)
+        context['user'] = user
         context['profile'] = profile
         context['title'] = f'Личный кабинет - {user.username}'
         context['page_title'] = f'Личный кабинет — {user.username}'
@@ -416,140 +426,165 @@ class PersonalCabinetView(LoginRequiredMixin, TemplateView):
         
         # Если пользователь автор
         if profile.is_author:
-            # Подписчики автора
-            subscribers = Subscription.objects.filter(author=user).select_related('subscriber__profile')
-            context['subscribers'] = subscribers
-            context['subscribers_count'] = subscribers.count()
-            
-            # Статистика автора
-            author_posts = Post.objects.filter(author=user)
-            context['author_posts_count'] = author_posts.count()
-            
-            # Лайки
-            total_likes = Like.objects.filter(post__author=user).count()
-            context['total_likes'] = total_likes
-            
-            # Комментарии к статьям автора (исключаем свои по имени)
-            comments_to_author = Comment.objects.filter(
-                post__author=user,
-                active=True
-            ).exclude(author_comment=user.username).count()
-            context['comments_to_author'] = comments_to_author
-            
-            # Донаты
-            donations = Donation.objects.filter(author=user).aggregate(
-                total=Sum('amount'),
-                count=Count('id')
-            )
-            context['total_donations'] = donations['total'] or 0
-            context['donations_count'] = donations['count']
-            
-            # Последние комментарии к статьям автора
-            context['recent_comments_to_posts'] = Comment.objects.filter(
-                post__author=user,
-                active=True
-            ).exclude(author_comment=user.username).select_related('post').order_by('-created')[:5]
-            
-            # Премия
-            context['total_bonus'] = profile.total_bonus
-            
-            # Данные заданий AI-ассистента для авторов
-            from Asistent.models import TaskAssignment, AuthorTaskRejection, AuthorNotification, ContentTask
-            
-            # Получаем отклонённые задания автором
-            rejected_task_ids = AuthorTaskRejection.objects.filter(author=user).values_list('task_id', flat=True)
-            
-            # Получаем задания которые автор уже взял
-            taken_task_ids = TaskAssignment.objects.filter(author=user).values_list('task_id', flat=True)
-            
-            # Доступные задания (не отклонённые, не взятые, не закрытые)
-            available_tasks = ContentTask.objects.filter(
-                status='available'
-            ).exclude(
-                id__in=rejected_task_ids
-            ).exclude(
-                id__in=taken_task_ids
-            ).filter(
-                deadline__gt=timezone.now()
-            )
-            
-            # Фильтруем по лимиту выполнений
-            available_tasks_filtered = []
-            for task in available_tasks:
-                if task.get_completions_count() < task.max_completions:
-                    available_tasks_filtered.append(task)
-            
-            # Задания автора (в работе и выполненные)
-            my_assignments = TaskAssignment.objects.filter(
-                author=user
-            ).select_related('task', 'article').order_by('-taken_at')
-            
-            # Баланс из донатов (уже есть total_donations, добавим balance)
-            context['balance'] = context['total_donations']
-            
-            # Уведомления AI-ассистента
-            ai_notifications = AuthorNotification.objects.filter(
-                recipient=user,
-                is_read=False
-            ).order_by('-created_at')[:5]
-            
-            # Статистика заданий
-            context['ai_tasks_stats'] = {
-                'total_completed': my_assignments.filter(status='approved').count(),
-                'total_earned': Donation.objects.filter(
+            try:
+                # Подписчики автора
+                subscribers = Subscription.objects.filter(author=user).select_related('subscriber__profile')
+                context['subscribers'] = subscribers
+                context['subscribers_count'] = subscribers.count()
+                
+                # Статистика автора
+                author_posts = Post.objects.filter(author=user)
+                context['author_posts_count'] = author_posts.count()
+                
+                # Лайки
+                total_likes = Like.objects.filter(post__author=user).count()
+                context['total_likes'] = total_likes
+                
+                # Комментарии к статьям автора (исключаем свои по имени)
+                comments_to_author = Comment.objects.filter(
+                    post__author=user,
+                    active=True
+                ).exclude(author_comment=user.username).count()
+                context['comments_to_author'] = comments_to_author
+                
+                # Донаты
+                donations = Donation.objects.filter(author=user).aggregate(
+                    total=Sum('amount'),
+                    count=Count('id')
+                )
+                context['total_donations'] = donations['total'] or 0
+                context['donations_count'] = donations['count']
+                
+                # Последние комментарии к статьям автора
+                context['recent_comments_to_posts'] = Comment.objects.filter(
+                    post__author=user,
+                    active=True
+                ).exclude(author_comment=user.username).select_related('post').order_by('-created')[:5]
+                
+                # Премия
+                context['total_bonus'] = profile.total_bonus
+                
+                # Данные заданий AI-ассистента для авторов
+                from Asistent.models import TaskAssignment, AuthorTaskRejection, AuthorNotification, ContentTask
+                
+                # Получаем отклонённые задания автором
+                rejected_task_ids = AuthorTaskRejection.objects.filter(author=user).values_list('task_id', flat=True)
+                
+                # Получаем задания которые автор уже взял
+                taken_task_ids = TaskAssignment.objects.filter(author=user).values_list('task_id', flat=True)
+                
+                # Доступные задания (не отклонённые, не взятые, не закрытые)
+                available_tasks = ContentTask.objects.filter(
+                    status='available'
+                ).exclude(
+                    id__in=rejected_task_ids
+                ).exclude(
+                    id__in=taken_task_ids
+                ).filter(
+                    deadline__gt=timezone.now()
+                )
+                
+                # Фильтруем по лимиту выполнений
+                available_tasks_filtered = []
+                for task in available_tasks:
+                    if task.get_completions_count() < task.max_completions:
+                        available_tasks_filtered.append(task)
+                
+                # Задания автора (в работе и выполненные)
+                my_assignments = TaskAssignment.objects.filter(
+                    author=user
+                ).select_related('task', 'article').order_by('-taken_at')
+                
+                # Баланс из донатов (уже есть total_donations, добавим balance)
+                context['balance'] = context['total_donations']
+                
+                # Уведомления AI-ассистента
+                ai_notifications = AuthorNotification.objects.filter(
+                    recipient=user,
+                    is_read=False
+                ).order_by('-created_at')[:5]
+                
+                # Статистика заданий
+                context['ai_tasks_stats'] = {
+                    'total_completed': my_assignments.filter(status='approved').count(),
+                    'total_earned': Donation.objects.filter(
+                        author=user,
+                        message__contains='Выполнение задания'
+                    ).aggregate(total=Sum('amount'))['total'] or 0,
+                    'tasks_in_progress': my_assignments.filter(status='in_progress').count(),
+                    'unread_notifications': ai_notifications.count()
+                }
+                
+                context['available_tasks'] = available_tasks_filtered
+                context['my_assignments'] = my_assignments
+                context['ai_notifications'] = ai_notifications
+                
+                # Бонусы и баланс автора
+                from donations.models import AuthorBonus, BonusPaymentRegistry
+                from Asistent.models import AuthorBalance
+                
+                # Последние бонусы (для превью)
+                recent_bonuses = AuthorBonus.objects.filter(
+                    author=user
+                ).select_related('role_at_calculation').order_by('-created_at')[:10]
+                
+                # История баланса (для превью)
+                recent_transactions = AuthorBalance.objects.filter(
+                    author=user
+                ).order_by('-created_at')[:10]
+                
+                # Статистика бонусов
+                total_bonuses = AuthorBonus.objects.filter(author=user).aggregate(
+                    total=Sum('total_bonus')
+                )['total'] or 0
+                
+                paid_bonuses = AuthorBonus.objects.filter(
                     author=user,
-                    message__contains='Выполнение задания'
-                ).aggregate(total=Sum('amount'))['total'] or 0,
-                'tasks_in_progress': my_assignments.filter(status='in_progress').count(),
-                'unread_notifications': ai_notifications.count()
-            }
-            
-            context['available_tasks'] = available_tasks_filtered
-            context['my_assignments'] = my_assignments
-            context['ai_notifications'] = ai_notifications
-            
-            # Бонусы и баланс автора
-            from donations.models import AuthorBonus, BonusPaymentRegistry
-            from Asistent.models import AuthorBalance
-            
-            # Последние бонусы (для превью)
-            recent_bonuses = AuthorBonus.objects.filter(
-                author=user
-            ).select_related('role_at_calculation').order_by('-created_at')[:10]
-            
-            # История баланса (для превью)
-            recent_transactions = AuthorBalance.objects.filter(
-                author=user
-            ).order_by('-created_at')[:10]
-            
-            # Статистика бонусов
-            total_bonuses = AuthorBonus.objects.filter(author=user).aggregate(
-                total=Sum('total_bonus')
-            )['total'] or 0
-            
-            paid_bonuses = AuthorBonus.objects.filter(
-                author=user,
-                status='paid'
-            ).aggregate(total=Sum('total_bonus'))['total'] or 0
-            
-            context['bonuses_stats'] = {
-                'total': total_bonuses,
-                'paid': paid_bonuses,
-                'pending': total_bonuses - paid_bonuses,
-            }
-            context['recent_bonuses'] = recent_bonuses
-            context['recent_transactions'] = recent_transactions
+                    status='paid'
+                ).aggregate(total=Sum('total_bonus'))['total'] or 0
+                
+                context['bonuses_stats'] = {
+                    'total': total_bonuses,
+                    'paid': paid_bonuses,
+                    'pending': total_bonuses - paid_bonuses,
+                }
+                context['recent_bonuses'] = recent_bonuses
+                context['recent_transactions'] = recent_transactions
+            except Exception as e:
+                logger.exception('PersonalCabinetView: error building author context for user id=%s: %s', user.id, e)
+                # Дефолты, чтобы шаблон не падал
+                context.setdefault('subscribers', Subscription.objects.none())
+                context.setdefault('subscribers_count', 0)
+                context.setdefault('author_posts_count', 0)
+                context.setdefault('total_likes', 0)
+                context.setdefault('comments_to_author', 0)
+                context.setdefault('total_donations', 0)
+                context.setdefault('donations_count', 0)
+                context.setdefault('recent_comments_to_posts', [])
+                context.setdefault('total_bonus', 0)
+                context.setdefault('balance', 0)
+                context.setdefault('ai_tasks_stats', {'total_completed': 0, 'total_earned': 0, 'tasks_in_progress': 0, 'unread_notifications': 0})
+                context.setdefault('available_tasks', [])
+                context.setdefault('my_assignments', [])
+                context.setdefault('ai_notifications', [])
+                context.setdefault('bonuses_stats', {'total': 0, 'paid': 0, 'pending': 0})
+                context.setdefault('recent_bonuses', [])
+                context.setdefault('recent_transactions', [])
         
         # Уведомления (для всех пользователей)
-        from Asistent.models import AuthorNotification
-        all_notifications = AuthorNotification.objects.filter(
-            recipient=user
-        ).order_by('-created_at')[:20]
-        
-        context['all_notifications'] = all_notifications
-        context['notifications_count'] = AuthorNotification.objects.filter(
-            recipient=user, is_read=False
-        ).count()
+        try:
+            from Asistent.models import AuthorNotification
+            all_notifications = AuthorNotification.objects.filter(
+                recipient=user
+            ).order_by('-created_at')[:20]
+            context['all_notifications'] = all_notifications
+            context['notifications_count'] = AuthorNotification.objects.filter(
+                recipient=user, is_read=False
+            ).count()
+        except Exception as e:
+            logger.exception('PersonalCabinetView: error loading notifications for user id=%s: %s', user.id, e)
+            context['all_notifications'] = []
+            context['notifications_count'] = 0
         
         return context
 

@@ -133,14 +133,19 @@ def _clean_ai_markers(text: str) -> str:
 def _convert_markdown_to_html(text: str) -> str:
     """
     Преобразует markdown в HTML для CKEditor.
-    Сначала очищает от AI маркеров.
+    Если текст уже содержит HTML-теги — возвращает как есть (не двоим контент).
     """
     if not text:
         return ""
-    
+
     # Очищаем от маркеров AI
     cleaned_text = _clean_ai_markers(text)
-    
+
+    # Если GigaChat уже вернул HTML — не прогоняем через markdown-конвертер
+    import re as _re
+    if _re.search(r'<(section|div|h[1-6]|p|ul|ol|li|article)\b', cleaned_text, _re.IGNORECASE):
+        return cleaned_text
+
     # Конвертируем markdown в HTML
     if MARKDOWN_AVAILABLE:
         html = markdown(
@@ -154,7 +159,7 @@ def _convert_markdown_to_html(text: str) -> str:
     else:
         # Fallback: простая замена
         html = cleaned_text.replace('\n', '<br>')
-    
+
     return html
 
 

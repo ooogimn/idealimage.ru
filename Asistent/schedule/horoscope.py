@@ -182,7 +182,6 @@ def generate_horoscope_from_prompt_template(schedule_id: int) -> Dict[str, Any]:
                 result = generator.generate(schedule_payload=schedule_payload)
                 
                 if result.success and result.post_id:
-                    from blog.models import Post
                     post = Post.objects.get(id=result.post_id)
                     created_posts.append(post)
                     logger.info(f"   ✅ Гороскоп для {zodiac_sign} создан: {post.title}")

@@ -171,6 +171,16 @@ class UniversalContentGenerator:
             logger.info(f"✅ Генерация завершена успешно (post_id: {result.post_id})")
             return result
         
+        except ValueError as e:
+            if 'no_image_after_fallback' in str(e):
+                logger.error("🚫 Генерация отменена: нет изображения. Черновик не создаётся.")
+                return GenerationResult(
+                    success=False,
+                    error='no_image_after_fallback',
+                )
+            logger.exception(f"❌ Ошибка генерации: {e}")
+            return GenerationResult(success=False, error=str(e))
+
         except RateLimitCooldown as e:
             logger.warning(f"⏸️ Rate limit: {e}")
             return GenerationResult(
@@ -498,18 +508,54 @@ class UniversalContentGenerator:
         try:
             image_processor = ImageProcessor(self.template, self._client)
             image_path = image_processor.generate(context, title=context.get('title', ''))
-            
+
+            if not image_path:
+                image_path = self._fallback_image_from_archive(context)
+
             logger.info(f"   ✅ Изображение обработано: {image_path or 'нет'}")
-            
+
             return {
                 'path': image_path,
                 'info': None,
                 'source_type': 'generated' if image_path else None,
             }
-        
+
         except Exception as e:
             logger.warning(f"   ⚠️ Ошибка генерации изображения: {e}")
-            return {'path': None, 'info': str(e), 'source_type': 'none'}
+            fallback = self._fallback_image_from_archive(context)
+            return {'path': fallback, 'info': str(e), 'source_type': 'archive' if fallback else 'none'}
+
+    def _fallback_image_from_archive(self, context: Dict):
+        """
+        Если GigaChat не смог нарисовать — берём последнюю картинку этого же знака зодиака.
+        Образ знака живёт и эволюционирует: вчерашний кадр лучше пустоты.
+        """
+        try:
+            zodiac_sign = context.get('zodiac_sign', '')
+            category = getattr(self.template, 'blog_category', None)
+
+            qs = Post._base_manager.filter(
+                status='published',
+                kartinka__isnull=False,
+            ).exclude(kartinka='').order_by('-id')
+
+            if zodiac_sign:
+                candidate = qs.filter(title__icontains=zodiac_sign).first()
+                if candidate and candidate.kartinka:
+                    logger.info(f"   📦 Fallback: картинка от знака '{zodiac_sign}' (пост ID={candidate.id})")
+                    return candidate.kartinka.name
+
+            if category:
+                candidate = qs.filter(category=category).first()
+                if candidate and candidate.kartinka:
+                    logger.info(f"   📦 Fallback: картинка из категории '{category}' (пост ID={candidate.id})")
+                    return candidate.kartinka.name
+
+            logger.warning("   ⚠️ Fallback: архив пуст, картинка не найдена")
+            return None
+        except Exception as e:
+            logger.warning(f"   ⚠️ Ошибка fallback-поиска картинки: {e}")
+            return None
     
     def _publish_post(self, content_result: Dict, image_result: Dict, context: Dict) -> Post:
         """
@@ -535,8 +581,15 @@ class UniversalContentGenerator:
         # Категория
         category = self.template.blog_category or Category.objects.first()
         
-        # Статус: по умолчанию published для AUTO, но ниже применим Quality Gate
+        # Статус: по умолчанию published для AUTO
         want_published = self.config.mode == GeneratorMode.AUTO
+
+        # ИИ не имеет права выпустить статью без картинки.
+        # Если fallback тоже не нашёл — отменяем публикацию полностью.
+        if want_published and not image_result.get('path'):
+            logger.error("   🚫 AI Quality Gate: нет изображения после всех попыток. Пост НЕ создаётся.")
+            raise ValueError("no_image_after_fallback")
+
         status, quality_note = self._check_quality_gate(content_result, image_result)
         if want_published and status == 'draft':
             logger.warning(f"   📋 Quality Gate: статья в черновик. {quality_note}")

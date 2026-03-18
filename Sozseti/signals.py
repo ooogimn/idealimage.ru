@@ -3,6 +3,7 @@ Signals для автоматической публикации в соцсет
 """
 import logging
 
+from django.db import transaction
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 
@@ -13,6 +14,11 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender=Post)
 def auto_publish_to_social(sender, instance, created, **kwargs):
+    # Условие 0: при программном сохранении (например, в AI-генераторе)
+    # можно явно отключить автопубликацию на уровне объекта.
+    if getattr(instance, '_skip_auto_publication', False):
+        return
+
     """
     Автоматическая постановка задачи на публикацию статьи в соцсети после публикации.
     """
@@ -37,16 +43,16 @@ def auto_publish_to_social(sender, instance, created, **kwargs):
         return
 
     try:
-        from Asistent.tasks import async_task
+        from Sozseti.tasks import publish_post_to_social
 
-        task_name = f"auto_social_post_{instance.id}"
+        post_id = instance.id
+        task_name = f"auto_social_post_{post_id}"
 
-        async_task(
-            'Sozseti.tasks.publish_post_to_social',
-            instance.id,
-            task_name=task_name,
-        )
+        def _enqueue_social_publish():
+            publish_post_to_social.apply_async(args=[post_id])
 
+        # Запускаем только после успешного коммита транзакции.
+        transaction.on_commit(_enqueue_social_publish)
         logger.info("🗓️ Запланирована автопубликация статьи '%s' (task=%s)", instance.title, task_name)
     except Exception as exc:
         logger.error("❌ Не удалось поставить автопубликацию '%s' в очередь: %s", instance.title, exc)

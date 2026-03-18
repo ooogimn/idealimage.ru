@@ -66,8 +66,32 @@ def async_task(func_path, *args, task_name: str = '', hook=None, **kwargs):
         module = importlib.import_module(module_path)
         func = getattr(module, func_name)
 
-    result = func.apply_async(args=args, kwargs=task_kwargs, **celery_options)
-    return str(result.id)
+    if hasattr(func, 'apply_async'):
+        result = func.apply_async(args=args, kwargs=task_kwargs, **celery_options)
+        return str(result.id)
+
+    # Legacy fallback: иногда сюда передают обычную функцию, а не Celery task.
+    # В таком случае выполняем синхронно, чтобы не ронять текущую транзакцию.
+    if celery_options:
+        logger.warning(
+            "async_task fallback to sync call for %s; celery options ignored: %s",
+            getattr(func, '__name__', str(func)),
+            ", ".join(sorted(celery_options.keys())),
+        )
+    else:
+        logger.warning(
+            "async_task fallback to sync call for %s (no apply_async)",
+            getattr(func, '__name__', str(func)),
+        )
+
+    try:
+        func(*args, **task_kwargs)
+    except Exception:
+        logger.exception(
+            "async_task sync fallback failed for %s",
+            getattr(func, '__name__', str(func)),
+        )
+    return ''
 
 
 STRATEGY_MAP = {

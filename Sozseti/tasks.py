@@ -2,6 +2,7 @@
 Django-Q задачи для автоматической публикации в соцсети
 """
 import logging
+from celery import shared_task
 from django.utils import timezone
 from django.conf import settings
 from .api_integrations.telegram_manager import TelegramChannelManager
@@ -11,6 +12,7 @@ from .models import PostPublication, PublicationSchedule, SocialChannel
 logger = logging.getLogger(__name__)
 
 
+@shared_task(name='Sozseti.tasks.publish_post_to_social')
 def publish_post_to_social(post_id, platforms=None, channels=None):
     """
     Публикует статью в социальные сети

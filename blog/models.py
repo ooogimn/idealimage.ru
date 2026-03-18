@@ -8,9 +8,13 @@ from ckeditor.fields import RichTextField
 from taggit.managers import TaggableManager
 from unidecode import unidecode
 from utilits.utils import image_compress, unique_slugify
+from bs4 import BeautifulSoup
+import json
+import logging
 import re
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 def _normalize_ai_text(raw_text: str) -> str:
@@ -313,6 +317,53 @@ class Post(models.Model):
     def get_absolute_url(self):
         """Метод получения URL-адреса объекта"""
         return reverse('blog:post_detail', kwargs={'slug': self.slug})  # args=[self.id, self.slug])
+
+    @property
+    def faq_schema_json(self):
+        """
+        Динамически генерирует Schema.org FAQPage из HTML контента статьи.
+        Ищет заголовки со словом "вопрос" и берет следующий за ними блок как ответ.
+        """
+        if not self.content:
+            return ""
+
+        try:
+            soup = BeautifulSoup(self.content, 'html.parser')
+            questions = soup.find_all(
+                ['h2', 'h3', 'h4'],
+                string=lambda t: t and 'вопрос' in t.lower() and (':' in t or '?' in t),
+            )
+
+            faq_items = []
+            for question in questions:
+                question_text = question.get_text(strip=True)
+                answer_node = question.find_next_sibling()
+                if answer_node and answer_node.name in ['p', 'div', 'ul']:
+                    answer_text = answer_node.get_text(" ", strip=True)
+                    if answer_text:
+                        faq_items.append(
+                            {
+                                "@type": "Question",
+                                "name": question_text,
+                                "acceptedAnswer": {
+                                    "@type": "Answer",
+                                    "text": answer_text,
+                                },
+                            }
+                        )
+
+            if not faq_items:
+                return ""
+
+            schema = {
+                "@context": "https://schema.org",
+                "@type": "FAQPage",
+                "mainEntity": faq_items,
+            }
+            return json.dumps(schema, ensure_ascii=False)
+        except Exception as exc:
+            logger.error("Ошибка генерации FAQ Schema для поста %s: %s", self.id, exc)
+            return ""
     
     def get_next_post(self):
         """Метод получения следующего поста"""

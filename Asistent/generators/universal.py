@@ -310,11 +310,16 @@ class UniversalContentGenerator:
         # Конвертация Markdown → HTML
         content_html = _convert_markdown_to_html(article_text)
         
-        # FAQ по тексту статьи (ТЗ №3, подготовка к Фазе C)
-        faq_list = self._generate_faq(article_text)
-        if faq_list:
-            content_html += self._format_faq_html(faq_list)
-            logger.info(f"   ✅ Добавлен блок FAQ: {len(faq_list)} вопросов")
+        # FAQ по тексту статьи (для гороскопов можно отключить для экономии токенов)
+        disable_faq = bool(context.get('disable_faq', False))
+        faq_list = []
+        if disable_faq:
+            logger.info("   ⏭️ FAQ отключен настройкой контекста")
+        else:
+            faq_list = self._generate_faq(article_text)
+            if faq_list:
+                content_html += self._format_faq_html(faq_list)
+                logger.info(f"   ✅ Добавлен блок FAQ: {len(faq_list)} вопросов")
         
         logger.info(f"   ✅ Текст сгенерирован (длина: {len(article_text)} символов)")
         

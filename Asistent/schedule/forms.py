@@ -62,6 +62,100 @@ class AIScheduleForm(forms.ModelForm):
             'placeholder': '5'
         })
     )
+
+    target_date_offset = forms.IntegerField(
+        label='Смещение целевой даты (дней)',
+        initial=1,
+        required=False,
+        min_value=0,
+        max_value=30,
+        help_text='0 = сегодня, 1 = завтра.',
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control',
+            'min': 0,
+            'max': 30,
+            'placeholder': '1'
+        })
+    )
+
+    publish_mode = forms.ChoiceField(
+        label='Режим публикации',
+        required=False,
+        initial='draft',
+        choices=[
+            ('draft', 'Черновик'),
+            ('published', 'Опубликовать сразу'),
+        ],
+        widget=forms.Select(attrs={'class': 'form-control'})
+    )
+
+    base_tags = forms.CharField(
+        label='Базовые теги',
+        required=False,
+        help_text='Через запятую.',
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'гороскоп, прогноз, astro'
+        })
+    )
+
+    title_template = forms.CharField(
+        label='Шаблон заголовка',
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': '{zodiac_sign} — прогноз на {next_date}'
+        })
+    )
+
+    description_template = forms.CharField(
+        label='Шаблон описания',
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 2,
+            'placeholder': 'Краткое описание для превью статьи'
+        })
+    )
+
+    partner_url = forms.URLField(
+        label='Партнёрская ссылка',
+        required=False,
+        widget=forms.URLInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'https://partner.example.com/ref'
+        })
+    )
+
+    partner_link_text = forms.CharField(
+        label='Текст партнёрской ссылки',
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Получить персональный разбор'
+        })
+    )
+
+    daily_limit = forms.IntegerField(
+        label='Лимит публикаций в день',
+        required=False,
+        initial=14,
+        min_value=1,
+        max_value=96,
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control',
+            'min': 1,
+            'max': 96,
+            'placeholder': '14'
+        })
+    )
+
+    disable_faq = forms.BooleanField(
+        label='Отключить FAQ-блок',
+        required=False,
+        initial=True,
+        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'})
+    )
     
     class Meta:
         model = AISchedule
@@ -219,6 +313,28 @@ class AIScheduleForm(forms.ModelForm):
                 self.fields['retry_count'].initial = payload.get('retry_count', 2)
             if 'retry_delay' in self.fields:
                 self.fields['retry_delay'].initial = payload.get('retry_delay', 5)
+            if 'target_date_offset' in self.fields:
+                self.fields['target_date_offset'].initial = payload.get('target_date_offset', 1)
+            if 'publish_mode' in self.fields:
+                self.fields['publish_mode'].initial = payload.get('publish_mode', 'draft')
+            if 'base_tags' in self.fields:
+                payload_tags = payload.get('base_tags')
+                if isinstance(payload_tags, list):
+                    self.fields['base_tags'].initial = ', '.join(str(tag) for tag in payload_tags if str(tag).strip())
+                elif isinstance(payload_tags, str):
+                    self.fields['base_tags'].initial = payload_tags
+            if 'title_template' in self.fields:
+                self.fields['title_template'].initial = payload.get('title_template', '')
+            if 'description_template' in self.fields:
+                self.fields['description_template'].initial = payload.get('description_template', '')
+            if 'partner_url' in self.fields:
+                self.fields['partner_url'].initial = payload.get('partner_url', '')
+            if 'partner_link_text' in self.fields:
+                self.fields['partner_link_text'].initial = payload.get('partner_link_text', '')
+            if 'daily_limit' in self.fields:
+                self.fields['daily_limit'].initial = payload.get('daily_limit', 14)
+            if 'disable_faq' in self.fields:
+                self.fields['disable_faq'].initial = bool(payload.get('disable_faq', True))
         
         self.fields['payload_template'].help_text = 'JSON-объект, который будет передан в пайплайн. Используйте конструктор ниже, чтобы не редактировать JSON вручную.'
         for field_name in ('strategy_options', 'static_params', 'dynamic_params', 'payload_template'):
@@ -241,10 +357,6 @@ class AIScheduleForm(forms.ModelForm):
                 raise forms.ValidationError(f'Опции стратегии должны быть валидным JSON: {exc}')
         elif not strategy_options:
             cleaned_data['strategy_options'] = {}
-
-        pipeline = cleaned_data.get('pipeline')
-        pipeline_slug = cleaned_data.get('pipeline_slug', '').strip()
-        cleaned_data['pipeline_slug'] = pipeline_slug
 
         payload_template = cleaned_data.get('payload_template')
         if isinstance(payload_template, str) and payload_template.strip():
@@ -276,15 +388,43 @@ class AIScheduleForm(forms.ModelForm):
         retry_delay = cleaned_data.get('retry_delay')
         if retry_delay is not None:
             payload['retry_delay'] = max(0, min(120, retry_delay))  # Ограничение 0-120 сек
+
+        target_date_offset = cleaned_data.get('target_date_offset')
+        if target_date_offset is not None:
+            payload['target_date_offset'] = max(0, min(30, int(target_date_offset)))
+
+        publish_mode = cleaned_data.get('publish_mode')
+        if publish_mode in {'draft', 'published'}:
+            payload['publish_mode'] = publish_mode
+
+        base_tags = cleaned_data.get('base_tags') or ''
+        base_tags_list = [tag.strip() for tag in str(base_tags).split(',') if tag.strip()]
+        if base_tags_list:
+            payload['base_tags'] = base_tags_list
+
+        title_template = (cleaned_data.get('title_template') or '').strip()
+        if title_template:
+            payload['title_template'] = title_template
+
+        description_template = (cleaned_data.get('description_template') or '').strip()
+        if description_template:
+            payload['description_template'] = description_template
+
+        partner_url = (cleaned_data.get('partner_url') or '').strip()
+        if partner_url:
+            payload['partner_url'] = partner_url
+
+        partner_link_text = (cleaned_data.get('partner_link_text') or '').strip()
+        if partner_link_text:
+            payload['partner_link_text'] = partner_link_text
+
+        daily_limit = cleaned_data.get('daily_limit')
+        if daily_limit:
+            payload['daily_limit'] = int(daily_limit)
+
+        payload['disable_faq'] = bool(cleaned_data.get('disable_faq', True))
         
         cleaned_data['payload_template'] = payload
-
-        if strategy_type == 'pipeline':
-            if not pipeline and not pipeline_slug:
-                raise forms.ValidationError('Для стратегии "Пайплайн" выберите автоматизацию или укажите slug.')
-        else:
-            cleaned_data['pipeline'] = None
-            cleaned_data['pipeline_slug'] = pipeline_slug
 
         # Требование к промптовой стратегии — наличие шаблона или источников
         if strategy_type == 'prompt':

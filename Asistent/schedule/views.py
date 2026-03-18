@@ -231,7 +231,7 @@ def schedule_detail(request, schedule_id):
     total_runs = AIScheduleRun.objects.filter(schedule=schedule).count()
     successful_runs = AIScheduleRun.objects.filter(
         schedule=schedule,
-        status='completed'
+        status='success'
     ).count()
     
     context = {

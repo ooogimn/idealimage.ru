@@ -177,6 +177,20 @@ def generate_single_horoscope(zodiac_sign: Optional[str] = None) -> dict:
         dict: Результат выполнения пайплайна
     """
     from Asistent.pipeline.executor import execute_pipeline_by_slug
+    from django.utils import timezone
+    from blog.models import Post
+
+    # ПРЕДОХРАНИТЕЛЬ: Проверка на дубликат за сегодня
+    if zodiac_sign:
+        today = timezone.now().date()
+        if Post.objects.filter(
+            title__icontains=zodiac_sign,
+            category__slug='intellektualnye-prognozy',
+            created__date=today,
+            status='published'
+        ).exists():
+            logger.warning(f"🛑 Дубликат {zodiac_sign} обнаружен. Пропуск генерации.")
+            return {"success": False, "status": "already_exists"}
     
     payload = {
         "target_date_offset": 1,
@@ -185,7 +199,7 @@ def generate_single_horoscope(zodiac_sign: Optional[str] = None) -> dict:
         "description_template": "Ежедневный гороскоп для {zodiac_sign} на {horoscope_target_date_display}.",
         "base_tags": ["гороскоп", "прогноз на завтра"],
         "prompt_name": "DAILY_HOROSCOPE_PROMPT",
-        "image_prompt_name": "HOROSCOPE_IMAGE_PROMPT",
+        "image_prompt_name": "DAILY_HOROSCOPE_PROMPT",
     }
     
     if zodiac_sign:
@@ -221,7 +235,7 @@ def generate_daily_horoscopes():
         description_template="Ежедневный гороскоп для {zodiac_sign} на {horoscope_target_date_display}.",
         base_tags=["гороскоп", "прогноз на завтра"],
         prompt_name="DAILY_HOROSCOPE_PROMPT",
-        image_prompt_name="HOROSCOPE_IMAGE_PROMPT",
+        image_prompt_name="DAILY_HOROSCOPE_PROMPT",
     )
 
 
@@ -237,5 +251,5 @@ def generate_weekly_horoscopes():
         description_template="Недельный гороскоп для {zodiac_sign}.",
         base_tags=["гороскоп", "недельный прогноз"],
         prompt_name="WEEKLY_HOROSCOPE_PROMPT",
-        image_prompt_name="HOROSCOPE_IMAGE_PROMPT",
+        image_prompt_name="DAILY_HOROSCOPE_PROMPT",
     )

@@ -55,7 +55,7 @@ TASK_TO_MODEL = {
     # GigaChat Max (1950₽/1M) - сложные креативные задачи
     'article_update': 'GigaChat-Pro',     # Обновление старых статей
     'creative': 'GigaChat-Pro',           # Креативные задачи (GigaChat-Max отключен)
-    'image_generation': 'GigaChat-Pro',   # Генерация изображений
+    'image_generation': 'GigaChat',       # Генерация изображений (эконом-режим по умолчанию)
     
     # Генерация статей — теперь на GigaChat (Lite), так как это массовая рутина
     'article_single': 'GigaChat',          # ✅ Обычные статьи

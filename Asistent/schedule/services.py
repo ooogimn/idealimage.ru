@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 import time
@@ -79,6 +80,42 @@ class PromptGenerationWorkflow:
         static_params = dict(self.schedule.static_params or {})
         dynamic_config = dict(self.schedule.dynamic_params or {})
         articles_per_run = max(self.schedule.articles_per_run or 1, 1)
+        payload = self._get_schedule_payload()
+
+        daily_limit = payload.get('daily_limit')
+        if daily_limit is not None:
+            try:
+                daily_limit = max(int(daily_limit), 1)
+                ai_user = self.ai_user
+                today_count_qs = Post.objects.filter(
+                    author=ai_user,
+                    created__date=current_time.date(),
+                    status='published',
+                )
+                if self.schedule.category_id:
+                    today_count_qs = today_count_qs.filter(category_id=self.schedule.category_id)
+                today_count = today_count_qs.count()
+                if today_count >= daily_limit:
+                    result = {
+                        'success': True,
+                        'status': 'skipped',
+                        'schedule_id': self.schedule.id,
+                        'schedule_name': self.schedule.name,
+                        'created_posts': 0,
+                        'created_count': 0,
+                        'errors': [],
+                        'reason': 'daily_limit_reached',
+                        'daily_limit': daily_limit,
+                        'created_today': today_count,
+                    }
+                    self.context.add_log('info', 'Daily limit reached', {
+                        'daily_limit': daily_limit,
+                        'created_today': today_count,
+                    })
+                    self.context.set_result(**result)
+                    return result
+            except Exception:
+                logger.exception("Не удалось применить daily_limit для расписания %s", self.schedule.id)
 
         created_posts: List[Post] = []
         errors: List[str] = []
@@ -626,19 +663,69 @@ class PromptGenerationWorkflow:
         if not category:
             category = Category.objects.order_by('id').first()
 
+        payload = self._get_schedule_payload()
+        publish_mode = str(payload.get('publish_mode') or 'published').strip().lower()
+        status = 'draft' if publish_mode == 'draft' else 'published'
+        auto_moderate = bool(payload.get('auto_moderate', True))
+        moderation_status = 'pending' if auto_moderate else 'approved'
+        plain_text_len = len(strip_tags(content_html or '').strip())
+        min_words = max(int(self.schedule.min_word_count or 0), 0)
+        approx_min_chars = min_words * 5 if min_words else 0
+        moderation_note = ""
+        if approx_min_chars and plain_text_len < approx_min_chars:
+            status = 'draft'
+            moderation_status = 'pending'
+            moderation_note = (
+                f"Quality gate: длина текста {plain_text_len} симв., "
+                f"минимум по расписанию ~{approx_min_chars} симв."
+            )
+
+        description = ""
+        description_template = payload.get('description_template')
+        if description_template:
+            try:
+                description = str(description_template).format(**params)
+            except Exception:
+                description = ""
+        if not description:
+            description = strip_tags(content_html or '')[:200]
+
+        partner_url = str(payload.get('partner_url') or '').strip()
+        partner_link_text = str(payload.get('partner_link_text') or '').strip()
+        if partner_url and partner_link_text and partner_url not in content_html:
+            safe_link_text = partner_link_text.replace('<', '&lt;').replace('>', '&gt;')
+            content_html += (
+                "\n\n<p><a href=\"{url}\" target=\"_blank\" rel=\"nofollow sponsored noopener\">"
+                "{text}</a></p>"
+            ).format(url=partner_url, text=safe_link_text)
+
         post = Post(
             title=title,
             content=content_html,
             author=author,
             category=category,
-            status='published',
-            moderation_status='auto_checked',
+            status=status,
+            moderation_status=moderation_status,
+            ai_moderation_notes=moderation_note,
+            description=description,
             video_optimized=False,  # Гороскопы не используют видео
         )
         post._auto_generated_by_schedule = True
         post._auto_schedule_id = self.schedule.id
         post.save()
         return post
+
+    def _get_schedule_payload(self) -> Dict:
+        payload = self.schedule.payload_template or {}
+        if isinstance(payload, dict):
+            return payload
+        if isinstance(payload, str):
+            try:
+                parsed = json.loads(payload) if payload.strip() else {}
+                return parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                return {}
+        return {}
 
     def _select_target_category(self) -> Optional[Category]:
         """

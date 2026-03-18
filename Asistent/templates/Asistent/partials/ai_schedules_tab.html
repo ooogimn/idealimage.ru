@@ -275,15 +275,6 @@
                                             Запустить
                                         </button>
                                     </form>
-                                {% if schedule.get_pipeline_slug and schedule.latest_pipeline_log_id %}
-                                <form method="post" action="{% url 'asistent:retry_pipeline_run' schedule.latest_pipeline_log_id %}" class="inline">
-                                    {% csrf_token %}
-                                    <button type="submit"
-                                            class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-yellow-500/90 hover:bg-yellow-500 text-white shadow">
-                                        Повторить
-                                    </button>
-                                </form>
-                                {% endif %}
                                     <a href="{% url 'asistent:edit_ai_schedule' schedule.id %}"
                                        class="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white">
                                         Редактировать
@@ -419,18 +410,6 @@
                                 Запустить
                             </button>
                         </form>
-                        {% if schedule.get_pipeline_slug and schedule.latest_pipeline_log_id %}
-                        <form method="post" action="{% url 'asistent:retry_pipeline_run' schedule.latest_pipeline_log_id %}" class="inline">
-                            {% csrf_token %}
-                            <button type="submit"
-                                    class="px-4 py-2 bg-yellow-500/90 hover:bg-yellow-500 text-white dark:text-white rounded-lg transition-colors flex items-center gap-2 text-sm font-semibold shadow">
-                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M5 4v3h.01L5 7a5 5 0 019.584-2.267l-1.42 1.42A3 3 0 007 7h2l-3 3-3-3h2a5 5 0 019.584-2.267l-1.42 1.42A3 3 0 007 7h2л-3 3-3-3h2zM15 16v-3h-.01L15 13a5 5 0 01-9.584 2.267l1.42-1.42A3 3 0 0013 13h-2л3-3 3 3h-2a5 5 0 01-9.584 2.267l1.42-1.42A3 3 0 0013 13h-2л3-3 3 3h-2z"></path>
-                                </svg>
-                                Повторить
-                            </button>
-                        </form>
-                        {% endif %}
                         <a href="{% url 'asistent:edit_ai_schedule' schedule.id %}"
                            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white dark:text-white rounded-lg transition-colors flex items-center gap-2 text-sm font-semibold">
                             <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">

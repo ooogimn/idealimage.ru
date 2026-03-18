@@ -55,7 +55,7 @@ TASK_TO_MODEL = {
     # GigaChat Max (1950₽/1M) - сложные креативные задачи
     'article_update': 'GigaChat-Pro',     # Обновление старых статей
     'creative': 'GigaChat-Pro',           # Креативные задачи (GigaChat-Max отключен)
-    'image_generation': 'GigaChat',       # Генерация изображений (эконом-режим по умолчанию)
+    'image_generation': 'GigaChat-Pro',   # Генерация изображений — всегда Pro (качество важнее экономии)
     
     # Генерация статей — теперь на GigaChat (Lite), так как это массовая рутина
     'article_single': 'GigaChat',          # ✅ Обычные статьи
@@ -1458,11 +1458,10 @@ class GigaChatSmartClient(GigaChatClient):
                 task_label="генерации изображений (GigaChat)"
             )
 
-            # Получаем приоритеты моделей для генерации изображений
-            optimal_model = TASK_TO_MODEL.get('image_generation', 'GigaChat-Pro')
-            fallback_chain = FALLBACK_CHAINS.get(optimal_model, ['GigaChat-Pro', 'GigaChat-Max'])
+            # Генерация изображений — всегда GigaChat-Pro первым (качество важнее экономии)
+            fallback_chain = ['GigaChat-Pro', 'GigaChat']
             timeout_sequence = [60, 90, 120]  # секунды ожидания для повторов внутри одной модели
-            
+
             logger.info(f"   📋 Задача: image_generation → Приоритет моделей: {fallback_chain}")
         
             # Пробуем каждую модель из цепочки приоритетов

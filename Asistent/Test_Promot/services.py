@@ -337,20 +337,25 @@ class ImageProcessor:
     
     def generate(self, context: Dict, title: str) -> Optional[str]:
         """
-        Генерация изображения через GigaChat-Pro.
-        ВСЕГДА использует GigaChat-Pro для изображений.
+        Генерация изображения через GigaChat.
+        Единственный источник промпта — template.image_generation_criteria.
         """
         image_type = self.template.image_source_type or 'generate_auto'
-        
-        if image_type == 'generate_custom' and self.template.image_generation_criteria:
-            image_prompt = self.template.image_generation_criteria.format(**context)
+
+        if image_type == 'none':
+            return None
+
+        criteria = (self.template.image_generation_criteria or '').strip()
+        if criteria:
+            # SafeFormatter: отсутствующие переменные заполняются пустой строкой
+            class _SafeDict(dict):
+                def __missing__(self, key):
+                    return ''
+
+            image_prompt = criteria.format_map(_SafeDict(context))
         else:
-            # Автоматический промпт - КОРОТКИЙ для экономии токенов
-            zodiac_sign = context.get('zodiac_sign', '')
-            if zodiac_sign:
-                image_prompt = f"Гороскоп {zodiac_sign}"
-            else:
-                image_prompt = "Гороскоп"
+            # Fallback если критерии не заданы — минимальный промпт из заголовка
+            image_prompt = title[:120] if title else context.get('zodiac_sign', 'гороскоп')
         
         try:
             import asyncio
@@ -377,13 +382,6 @@ class ImageProcessor:
                     )
 
             filepath = _run_prompt(image_prompt)
-            if not filepath and image_type != 'generate_custom':
-                # Fallback: для негороскопных статей пробуем более предметный короткий промпт.
-                category_hint = context.get('category') or 'статья'
-                fallback_prompt = f"Титульное изображение: {category_hint}. {title[:80]}"
-                logger.warning("   ⚠️ Пустой ответ на изображение, fallback prompt: %s", fallback_prompt)
-                filepath = _run_prompt(fallback_prompt)
-            
             return filepath
         except Exception as e:
             logger.error(f"   ❌ Ошибка генерации изображения: {e}", exc_info=True)

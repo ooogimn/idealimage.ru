@@ -51,7 +51,18 @@ DEFAULT_SYSTEM_PROMPT = (
 
 # Quality Gate (ТЗ №4): минимум символов для публикации
 MIN_TEXT_PUBLISH = 2000
-MIN_TEXT_HOROSCOPE = 1500
+MIN_TEXT_HOROSCOPE = 800  # Гороскопы короче по жанру
+
+# Паттерны отказных сообщений GigaChat (контентная политика)
+GIGACHAT_REFUSAL_PATTERNS = [
+    'временно ограничены',
+    'не могу создать',
+    'не могу написать',
+    'противоречит правилам',
+    'чувствительными темами',
+    'не могу помочь с этим',
+    'нарушает правила',
+]
 QUALITY_GATE_NEEDS_EDIT = 'Нужна ручная правка: текст или изображение не прошли проверку.'
 
 
@@ -305,6 +316,15 @@ class UniversalContentGenerator:
             strategy, article_prompt, context
         )
         
+        # Детектор отказного сообщения GigaChat (контентная политика)
+        text_lower = article_text.lower()
+        if any(pattern in text_lower for pattern in GIGACHAT_REFUSAL_PATTERNS):
+            logger.warning(
+                "   ⚠️ GigaChat вернул отказное сообщение. "
+                "Используем спаршенный контент напрямую."
+            )
+            article_text = parsed_content or article_text
+
         # Генерация заголовка
         title_generator = TitleGenerator(
             self.template, self._client, self.config.timeout

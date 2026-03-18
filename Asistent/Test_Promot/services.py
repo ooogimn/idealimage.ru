@@ -346,40 +346,43 @@ class ImageProcessor:
             image_prompt = self.template.image_generation_criteria.format(**context)
         else:
             # Автоматический промпт - КОРОТКИЙ для экономии токенов
-            # Используем только знак зодиака, без длинного заголовка
             zodiac_sign = context.get('zodiac_sign', '')
             if zodiac_sign:
                 image_prompt = f"Гороскоп {zodiac_sign}"
             else:
-                # Fallback на короткий промпт
                 image_prompt = "Гороскоп"
         
         try:
             import asyncio
-            # Правильная обработка event loop для Django-Q
-            # Проверяем, есть ли уже запущенный loop
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # Если loop уже запущен - создаём новый и используем его
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                    try:
-                        filepath = loop.run_until_complete(
-                            self.client.generate_and_save_image(prompt=image_prompt)
-                        )
-                    finally:
-                        loop.close()
-                else:
-                    # Loop существует, но не запущен - используем его
-                    filepath = loop.run_until_complete(
-                        self.client.generate_and_save_image(prompt=image_prompt)
+
+            def _run_prompt(prompt_text: str) -> Optional[str]:
+                # Правильная обработка event loop для Celery/Django окружения
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                        try:
+                            return loop.run_until_complete(
+                                self.client.generate_and_save_image(prompt=prompt_text)
+                            )
+                        finally:
+                            loop.close()
+                    return loop.run_until_complete(
+                        self.client.generate_and_save_image(prompt=prompt_text)
                     )
-            except RuntimeError:
-                # Если нет loop - создаём новый через asyncio.run()
-                filepath = asyncio.run(
-                    self.client.generate_and_save_image(prompt=image_prompt)
-                )
+                except RuntimeError:
+                    return asyncio.run(
+                        self.client.generate_and_save_image(prompt=prompt_text)
+                    )
+
+            filepath = _run_prompt(image_prompt)
+            if not filepath and image_type != 'generate_custom':
+                # Fallback: для негороскопных статей пробуем более предметный короткий промпт.
+                category_hint = context.get('category') or 'статья'
+                fallback_prompt = f"Титульное изображение: {category_hint}. {title[:80]}"
+                logger.warning("   ⚠️ Пустой ответ на изображение, fallback prompt: %s", fallback_prompt)
+                filepath = _run_prompt(fallback_prompt)
             
             return filepath
         except Exception as e:

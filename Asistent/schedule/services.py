@@ -10,6 +10,7 @@ from typing import Dict, List, Optional, Tuple
 import requests
 from django.conf import settings
 from django.contrib.auth.models import User
+from django.db.models import Max, Q
 from django.utils import timezone
 from django.utils.html import strip_tags
 
@@ -86,6 +87,7 @@ class PromptGenerationWorkflow:
             try:
                 generation_start = time.time()
                 resolved_dynamic = resolve_dynamic_params(dynamic_config, self.schedule.id) if dynamic_config else {}
+                target_category = self._select_target_category()
 
                 # РЕФАКТОРИНГ: подготовка параметров
                 params = self._prepare_parameters_via_service(
@@ -94,6 +96,7 @@ class PromptGenerationWorkflow:
                     current_time=current_time,
                     article_index=article_index,
                     total=articles_per_run,
+                    target_category=target_category,
                 )
 
                 # РЕФАКТОРИНГ: генерация контента через Test_Promot
@@ -105,7 +108,7 @@ class PromptGenerationWorkflow:
                 title, content_html = self._postprocess_article_via_service(article_text, params)
 
                 # Создание поста (уникальная логика расписания)
-                post = self._create_post(title, content_html, params)
+                post = self._create_post(title, content_html, params, target_category=target_category)
 
                 # РЕФАКТОРИНГ: генерация изображения через Test_Promot
                 image_path, image_info = self._generate_image_via_service(params, title)
@@ -226,6 +229,7 @@ class PromptGenerationWorkflow:
         current_time: datetime,
         article_index: int,
         total: int,
+        target_category: Optional[Category] = None,
     ) -> Dict:
         """
         РЕФАКТОРИНГ: подготовка параметров через ContextBuilder из Test_Promot.
@@ -246,6 +250,9 @@ class PromptGenerationWorkflow:
             'run_datetime': current_time.strftime('%d.%m.%Y %H:%M'),
             'run_date': current_time.strftime('%d.%m.%Y'),
         })
+        if target_category:
+            user_variables.setdefault('category', target_category.title)
+            user_variables.setdefault('category_id', target_category.id)
         
         # Строим контекст через ContextBuilder
         builder = ContextBuilder(self.template, user_variables)
@@ -599,7 +606,13 @@ class PromptGenerationWorkflow:
 
         return title, content_html
 
-    def _create_post(self, title: str, content_html: str, params: Dict) -> Post:
+    def _create_post(
+        self,
+        title: str,
+        content_html: str,
+        params: Dict,
+        target_category: Optional[Category] = None,
+    ) -> Post:
         author = self.ai_user
         author_id = params.get('author_id')
         if author_id:
@@ -609,7 +622,7 @@ class PromptGenerationWorkflow:
             except User.DoesNotExist:
                 logger.warning("   ⚠️ Автор с ID %s не найден, используется AI-ассистент", author_id)
 
-        category = self.template.blog_category or self.schedule.category
+        category = target_category or self.template.blog_category or self.schedule.category
         if not category:
             category = Category.objects.order_by('id').first()
 
@@ -626,6 +639,39 @@ class PromptGenerationWorkflow:
         post._auto_schedule_id = self.schedule.id
         post.save()
         return post
+
+    def _select_target_category(self) -> Optional[Category]:
+        """
+        Выбирает категорию для article_single расписаний, если категория не задана явно.
+        Логика ротации: берем категорию с самой старой датой последней публикации.
+        """
+        if self.template and self.template.blog_category:
+            return self.template.blog_category
+
+        if self.schedule.category:
+            return self.schedule.category
+
+        if (self.template and self.template.category != 'article_single') or self.schedule.task_type != 'generate_article':
+            return None
+
+        categories = (
+            Category.objects
+            .annotate(
+                last_post_created=Max(
+                    'posts__created',
+                    filter=Q(posts__status='published'),
+                )
+            )
+            .order_by('last_post_created', 'id')
+        )
+        category = categories.first()
+        if category:
+            self.context.add_log('info', 'Category selected by rotator', {
+                'category_id': category.id,
+                'category_title': category.title,
+                'last_post_created': category.last_post_created.isoformat() if category.last_post_created else None,
+            })
+        return category
 
     def _apply_tags(self, post: Post, params: Dict) -> None:
         if not self.template.tags_criteria:

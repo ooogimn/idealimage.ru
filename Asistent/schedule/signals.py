@@ -43,7 +43,7 @@ def sync_ai_schedule_on_save(sender, instance, created, **kwargs):
     try:
         periodic_task = PeriodicTask.objects.get(name=task_name)
         # Обновляем существующую задачу
-        periodic_task.task = 'Asistent.tasks.run_specific_schedule'
+        periodic_task.task = 'Asistent.schedule.tasks.run_specific_schedule'
         periodic_task.args = json.dumps([])
         periodic_task.kwargs = json.dumps({'schedule_id': instance.id})
         periodic_task.enabled = True
@@ -63,7 +63,7 @@ def sync_ai_schedule_on_save(sender, instance, created, **kwargs):
         # Создаём новое расписание
         periodic_task = PeriodicTask.objects.create(
             name=task_name,
-            task='Asistent.tasks.run_specific_schedule',
+            task='Asistent.schedule.tasks.run_specific_schedule',
             args=json.dumps([]),
             kwargs=json.dumps({'schedule_id': instance.id}),
             **schedule

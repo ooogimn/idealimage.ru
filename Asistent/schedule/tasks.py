@@ -2,6 +2,7 @@
 Задачи для выполнения расписаний через Celery.
 Содержит основную логику запуска расписаний и вспомогательные функции.
 """
+import json
 import logging
 from datetime import timedelta
 from typing import Dict, Any
@@ -171,8 +172,17 @@ def _check_if_horoscope_schedule(schedule: AISchedule) -> bool:
         if (schedule.prompt_template.category == 'horoscope' or 
             schedule.prompt_template.name == 'DAILY_HOROSCOPE_PROMPT'):
             return True
-    elif schedule.payload_template.get('prompt_name') == 'DAILY_HOROSCOPE_PROMPT':
-        return True
+    else:
+        payload = schedule.payload_template
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload) if payload.strip() else {}
+            except (json.JSONDecodeError, AttributeError):
+                payload = {}
+        elif not isinstance(payload, dict):
+            payload = {}
+        if payload.get('prompt_name') == 'DAILY_HOROSCOPE_PROMPT':
+            return True
     return False
 
 

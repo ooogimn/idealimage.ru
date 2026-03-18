@@ -47,17 +47,18 @@ def sync_ai_schedule_on_save(sender, instance, created, **kwargs):
     try:
         periodic_task = PeriodicTask.objects.get(name=task_name)
         # Обновляем существующую задачу
-        periodic_task.task = 'Asistent.tasks.run_specific_schedule'
+        periodic_task.task = 'Asistent.schedule.tasks.run_specific_schedule'
         periodic_task.args = json.dumps([instance.id])
         periodic_task.kwargs = json.dumps({})
         periodic_task.enabled = True
         
-        # Обновляем расписание
-        if isinstance(schedule, CrontabSchedule):
-            periodic_task.crontab = schedule
+        # Обновляем расписание — _build_celery_schedule возвращает dict
+        # формата {'crontab': obj} или {'interval': obj}
+        if 'crontab' in schedule:
+            periodic_task.crontab = schedule['crontab']
             periodic_task.interval = None
-        else:
-            periodic_task.interval = schedule
+        elif 'interval' in schedule:
+            periodic_task.interval = schedule['interval']
             periodic_task.crontab = None
             
         periodic_task.save()
@@ -66,7 +67,7 @@ def sync_ai_schedule_on_save(sender, instance, created, **kwargs):
         # Создаём новое расписание
         periodic_task = PeriodicTask.objects.create(
             name=task_name,
-            task='Asistent.tasks.run_specific_schedule',
+            task='Asistent.schedule.tasks.run_specific_schedule',
             args=json.dumps([instance.id]),
             kwargs=json.dumps({}),
             **schedule

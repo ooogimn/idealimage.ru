@@ -8,6 +8,7 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender=Post)
 def post_save_media_processing(sender, instance, created, **kwargs):
+    return  # DISABLED_HOTFIX_2026_03_18
     """
     Сигнал для запуска обработки медиа (видео/фото) после сохранения поста
     """

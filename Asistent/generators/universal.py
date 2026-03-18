@@ -594,8 +594,8 @@ class UniversalContentGenerator:
         if want_published and status == 'draft':
             logger.warning(f"   📋 Quality Gate: статья в черновик. {quality_note}")
         
-        # Создаём пост
-        with transaction.atomic():
+        # Создаём пост (без общего atomic — иначе side-effects ломают транзакцию)
+        if True:  # HOTFIX: disable atomic wrapper
             post = Post(
                 title=content_result['title'],
                 content=content_result['content'],
@@ -633,9 +633,9 @@ class UniversalContentGenerator:
                 post.tags.add(*valid_tags)
                 logger.info(f"   🏷️ Теги добавлены: {len(valid_tags)} шт.")
         
-        # Telegram (только для AUTO и опубликованного)
+        # Telegram временно отключен из критического пути (HOTFIX non-blocking)
         if self.config.mode == GeneratorMode.AUTO and status == 'published':
-            self._send_to_telegram(post)
+            logger.info("   ⏭️ Telegram отправка пропущена (HOTFIX non-blocking)")
         
         # Мгновенная индексация (ТЗ №4): Яндекс.Вебмастер / Google / IndexNow
         if status == 'published':

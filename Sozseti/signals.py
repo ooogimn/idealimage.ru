@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 @receiver(post_save, sender=Post)
 def auto_publish_to_social(sender, instance, created, **kwargs):
+    return  # DISABLED_HOTFIX_2026_03_18
     # Условие 0: при программном сохранении (например, в AI-генераторе)
     # можно явно отключить автопубликацию на уровне объекта.
     if getattr(instance, '_skip_auto_publication', False):

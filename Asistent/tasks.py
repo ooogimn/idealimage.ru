@@ -307,7 +307,7 @@ def improve_author_draft_task(
 # Генерация изображения для поста (ручной вызов из формы редактирования)
 # ========================================================================
 @shared_task(name='Asistent.tasks.generate_post_image_task', bind=True, max_retries=2, default_retry_delay=30)
-def generate_post_image_task(post_id: int, image_prompt: str = '', requested_by_id: int = None):
+def generate_post_image_task(self, post_id: int, image_prompt: str = '', requested_by_id: int = None):
     """
     Асинхронная задача генерации нового изображения для статьи.
     Создаёт уведомление с путями к новому и старому изображениям.
